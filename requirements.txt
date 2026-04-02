@@ -1,0 +1,15 @@
+# Core dependency: Selenium for browser automation
+selenium>=4.20.0
+
+# Driver management (fallback for Selenium's built-in SeleniumManager)
+webdriver-manager>=4.0.2
+
+# HTTP Client
+requests>=2.31.0
+
+# Captcha recognition
+Pillow>=10.1.0  # Basic image processing library
+ddddocr         # OCR captcha recognition
+
+# Modern GUI framework
+customtkinter>=5.2.0
