@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+.build_venv/
+
+# Editor directories
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Sensitive files
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Test cache
+.pytest_cache/
+
+# Ignore coverage reports
+htmlcov/
+.coverage
+
+# Node modules (if any)
+node_modules/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Misc
+*.bak
+*.swp
+mail.txt
+*.png
