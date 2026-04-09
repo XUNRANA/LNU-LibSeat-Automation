@@ -23,7 +23,7 @@
 
 ### Step 1：下载程序
 
-前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 页面，下载最新版 `LNU-LibSeat-v2.3.0.zip`，解压到任意位置。
+前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 页面，下载最新版 `LNU-LibSeat-v2.4.0.zip`，解压到任意位置。
 
 ### Step 2：运行
 
