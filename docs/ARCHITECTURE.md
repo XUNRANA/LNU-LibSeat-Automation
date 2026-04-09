@@ -60,7 +60,8 @@ main.py
  ├── logic/auth.py             (Authenticator.login)
  │   └── core/captcha.py       (solver.solve_base64)
  ├── logic/navigator.py        (enter_room)
- └── logic/booker.py           (SeatBooker + 失败截图)
+ └── logic/booker.py           (SeatBooker + 点选验证码 + 失败截图)
+     └── core/captcha.py       (click_solver.solve)
 ```
 
 ---
@@ -86,13 +87,12 @@ main()
 ```
 thread_task(account, password, time_config, stop_event)
  │
- ├── 创建临时目录 (tempfile.mkdtemp)
- │
  ├── 阶段 0：等待 6:29:15 (prep_at) → 准备就绪 (含 30 分钟心跳日志)
- │   ├── 启动浏览器
- │   ├── Authenticator(driver).login(account, password)
+ │   ├── 启动纯净无痕浏览器（无临时目录依赖）
+ │   ├── Authenticator(driver).login(account, password, stop_event)
  │   │   ├── 打开登录页 → WebDriverWait 等页面就绪
- │   │   ├── 填写账号密码
+ │   │   ├── 检测系统维护/网络异常 → 自动恢复
+ │   │   ├── 模拟真人速度填写账号密码
  │   │   ├── 轮询获取验证码图片 (base64)
  │   │   ├── ddddocr OCR 识别
  │   │   ├── 填入验证码 → 点击登录
@@ -103,6 +103,15 @@ thread_task(account, password, time_config, stop_event)
  │           └── booker.select_time_and_wait(seat, start, end)
  │
  ├── 阶段 1：等待 6:30:00 (fire_at) → 准时 fire_submit()
+ │   ├── 点击「立即预约」按钮
+ │   ├── _handle_click_captcha()  ← 🆕 点选验证码处理
+ │   │   ├── 检测验证码弹窗是否出现
+ │   │   ├── 提取目标文字图片 + 背景大图 (base64)
+ │   │   ├── click_solver.solve() — ddddocr 检测+分类
+ │   │   ├── ActionChains 依次点击匹配文字位置
+ │   │   ├── 点击「确定」→ 等待弹窗消失
+ │   │   └── 失败自动刷新重试（最多 5 次）
+ │   └── 验证码通过后尝试再次点击「立即预约」
  │
  └── 阶段 2：检查结果
      ├── booker.check_result()
@@ -144,15 +153,21 @@ thread_task(account, password, time_config, stop_event)
 
 **关键配置**：
 - `page_load_strategy = 'eager'` — DOM ready 即可，不等所有资源
-- `--disable-blink-features=AutomationControlled` — 反自动化检测
-- `--disable-images` — 禁用图片加速加载
+- `--disable-blink-features=AutomationControlled` — C++ 层面移除 WebDriver 标识
+- 自定义 User-Agent — 去除自动化泄露特征
+- `excludeSwitches: ['enable-automation']` — 隐藏自动化控制条
 - 页面超时 30 秒
 
 ### `core/captcha.py` — 验证码识别
 
+**`CaptchaSolver`（登录验证码）**：
 - 全局单例 `solver`，避免重复加载模型
-- 输入：Base64 字符串 → 输出：识别的文本字符串
-- 典型验证码：4 位字母数字混合
+- 输入：Base64 字符串 → 输出：识别的文本字符串（4 位字母数字）
+
+**`ClickCaptchaSolver`（预约点选验证码）** 🆕：
+- 全局单例 `click_solver`，ddddocr 检测引擎 (`det=True`) + 分类引擎 (`det=False`)
+- `solve(target_bytes, bg_bytes)` → 返回按顺序的点击坐标 `[(x, y), ...]`
+- 流程：识别目标文字 → 检测背景图文字区域 → 逐个裁剪 OCR → 匹配目标 → 输出坐标
 
 ### `core/logger.py` — 日志系统
 
@@ -169,8 +184,10 @@ thread_task(account, password, time_config, stop_event)
 
 ### `logic/auth.py` — `Authenticator` 类
 
-- 封装完整的登录流程
+- 封装完整的登录流程，支持 `stop_event` 全局中止
 - 打开登录页后使用 `WebDriverWait` 等待页面就绪（不再硬等 3 秒）
+- 系统维护检测 → 自动触发全局停止；网络异常 → 自动刷新恢复
+- 模拟真人输入速度（逐字符输入 + 间隔），降低反爬触发概率
 - 最多重试 5 次
 - 验证码图片通过轮询 `<img>` 元素的 `src` 属性获取 Base64 数据
 - 使用 JS 点击登录按钮避免元素遮挡问题
@@ -186,7 +203,9 @@ thread_task(account, password, time_config, stop_event)
 
 核心方法：
 - `select_time_and_wait()` — 选座 + 选时间
-- `fire_submit()` — 点击提交
+- `fire_submit()` — 点击提交 + 自动处理点选验证码 + 再次提交
+- `_handle_click_captcha()` 🆕 — 检测验证码弹窗 → 提取图片 → 求解 → 点击 → 确认（最多 5 次重试）
+- `_refresh_click_captcha()` 🆕 — 刷新验证码图片
 - `check_result()` — 使用 `EC.any_of` 检测多种弹窗结果，失败时自动截图
 - `close_popup()` — 关闭预约弹窗
 - `_save_failure_screenshot()` — 保存失败截图到 `logs/screenshot_{tag}_{timestamp}.png`
@@ -198,11 +217,11 @@ thread_task(account, password, time_config, stop_event)
 | 决策 | 理由 |
 |------|------|
 | **threading 而非 asyncio** | Selenium 是同步 API；多线程简单直接 |
-| **每线程独立临时目录** | 避免多个浏览器实例共享 user-data-dir 导致锁冲突 |
+| **纯净无痕浏览器** | 每线程创建全新浏览器实例（`user_data_dir=None`），无历史数据干扰 |
 | **stop_event 贯穿全链路** | 替代轮询 `time.sleep`，支持 Ctrl+C 快速退出 |
 | **两阶段卡点** | 06:29:15 顺序完成启动+登录+选座，6:30:00 只需一次点击 |
 | **JS 点击而非原生 click** | 避免悬浮层遮挡导致的 `ElementClickInterceptedException` |
-| **ddddocr 单例** | 模型加载耗时，全局共享减少开销 |
+| **ddddocr 单例** | 模型加载耗时，全局共享减少开销（登录 OCR + 点选检测/分类共 3 个实例） |
 | **attempt_seat_selection 复用** | 准备阶段和失败重试 共用选座逻辑，消除代码重复 |
 | **send_email 检查返回值** | 邮件函数内部捕获异常返回 bool，调用方据此记录日志 |
 | **get_logger 统一日志** | 所有模块的日志都写入文件，不再有静默丢失 |
@@ -296,4 +315,5 @@ def send_dingtalk(title: str, content: str) -> bool:
 
 ### 修改验证码识别方案
 
-替换 `core/captcha.py` 中的 `CaptchaSolver` 实现，保持 `solver` 全局实例和 `solve_base64` 接口不变即可。
+- **登录验证码**：替换 `CaptchaSolver` 实现，保持 `solver` 全局实例和 `solve_base64` 接口不变。
+- **预约点选验证码**：替换 `ClickCaptchaSolver` 实现，保持 `click_solver` 全局实例和 `solve(target_bytes, bg_bytes)` 接口不变。

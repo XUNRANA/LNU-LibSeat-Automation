@@ -14,7 +14,7 @@
 - 🖥️ **现代化图形界面** — 全新设计的 GUI，采用 Indigo 主题配色，卡片式布局，视觉清爽
 - 🧵 **多线程并发** — 多账号同时运行，分时段分工，最大化抢座成功率
 - 🎯 **精确锁定** — 指定座位号 + 时间段，按优先级依次尝试
-- 🔐 **验证码自动识别** — 集成 ddddocr OCR，无需手动输入
+- 🔐 **验证码自动识别** — 登录验证码 OCR + 预约点选文字验证码自动破解（ddddocr 检测+分类双引擎）
 - ⏱️ **智能卡点** — 预约时间前 45 秒自动准备，到点分秒不差地满速抢座
 - 📧 **邮件通知** — 抢座成功后自动发送战报至你的邮箱
 - 📸 **失败截图** — 预约失败时自动截图保存，方便事后排查
@@ -72,7 +72,7 @@
 
 **无需安装 Python，无需任何编程知识！**
 
-1. 前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载最新版 `LNU-LibSeat-v2.3.0.zip`
+1. 前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载最新版 `LNU-LibSeat-v2.4.0.zip`
 2. 解压到任意位置
 3. 双击 `LNU-LibSeat.exe`，在 GUI 界面中填写学号、密码、座位号等（GUI 会自动保存到本地 `config.py`）
 4. 点击「开始抢座」，完事！
@@ -123,14 +123,14 @@ LNU-LibSeat-Automation/
 ├── _runtime_hook.py         # PyInstaller 运行时钩子
 ├── core/                    # 🛠️ 基础设施层
 │   ├── driver.py            #   WebDriver 创建与管理
-│   ├── captcha.py           #   验证码 OCR（ddddocr）
+│   ├── captcha.py           #   验证码识别（登录 OCR + 预约点选文字验证码）
 │   ├── logger.py            #   日志系统（控制台 + 文件轮转 + GUI 回调）
 │   ├── notifications.py     #   SMTP 邮件推送
 │   └── utils.py             #   时间工具
 ├── logic/                   # 🧠 业务逻辑层
 │   ├── auth.py              #   自动登录 + 验证码处理
 │   ├── navigator.py         #   校区切换 + 进入自习室
-│   └── booker.py            #   选座 + 提交 + 结果检测
+│   └── booker.py            #   选座 + 提交 + 点选验证码 + 结果检测
 ├── tests/                   # 🧪 测试套件
 └── docs/                    # 📖 文档
     ├── QUICKSTART.md         #   快速上手教程
