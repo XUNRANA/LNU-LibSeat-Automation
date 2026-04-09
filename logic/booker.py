@@ -2,12 +2,16 @@
 import os
 import time
 import random
+import base64
 from datetime import datetime, timezone, timedelta
+from io import BytesIO
 
 from selenium.common import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from PIL import Image
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -52,10 +56,13 @@ class SeatBooker:
         """
         选好座位和时间，等待命令
         """
-        logger.info("🔒 正在尝试锁定座位 %s (%s-%s)...", seat_num, start_time, end_time)
+        # 兼容用户输入的 "001" 或 "01" 等前导零，统一抹平为 "1"，以匹配网页上的真实座号
+        clean_seat_num = str(int(seat_num)) if str(seat_num).isdigit() else str(seat_num)
+
+        logger.info("🔒 正在尝试锁定座位 %s (%s-%s)...", clean_seat_num, start_time, end_time)
         try:
-            # 1. 点击座位
-            xpath = f'//div[contains(@class, "seat-name") and contains(text(), "{seat_num}")]'
+            # 1. 点击座位 (精确匹配，杜绝 3 匹配到 138 的 Bug)
+            xpath = f'//div[contains(@class, "seat-name") and normalize-space(text())="{clean_seat_num}"]'
             try:
                 seat_elem = self.wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", seat_elem)
@@ -64,12 +71,27 @@ class SeatBooker:
                 logger.warning("⚠️ 座位 %s 找不到或不可点击，跳过", seat_num)
                 return False
 
-            # 2. 等待弹窗出现
-            try:
-                # 显式等待预约框出现，时间可以长一点
-                WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "reserve-box")))
-            except TimeoutException:
-                logger.warning("⚠️ 座位 %s 点击后未弹出预约框，跳过", seat_num)
+            # 2. 动态轮询等待弹窗出现，同时监听可能弹出的错误提示(如"约满"、"没有可约时间")
+            start_wait = time.time()
+            popup_found = False
+            while time.time() - start_wait < 5:
+                # a) 检查是否有报错 Toast
+                error_msgs = self.driver.find_elements(By.CLASS_NAME, "el-message__content")
+                if error_msgs:
+                    msg = error_msgs[-1].text.strip()
+                    if msg and ("没有可约时间" in msg or "约满" in msg or "不可" in msg or "已经被" in msg):
+                        logger.warning("⚠️ 座位 %s 被拒:【%s】，立即跳过该座位", seat_num, msg)
+                        return False
+                
+                # b) 检查预约弹窗是否已经成功弹出
+                if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
+                    popup_found = True
+                    break
+                    
+                time.sleep(0.3)
+
+            if not popup_found:
+                logger.warning("⚠️ 座位 %s 点击后未弹出预约框且无提示，跳过", seat_num)
                 return False
 
             # 3. 选择开始时间 (Column 1)
@@ -141,15 +163,146 @@ class SeatBooker:
 
     def fire_submit(self):
         """
-        开火！点击提交按钮
+        开火！点击提交按钮，处理验证码，再次点击提交完成预约。
+        流程：立即预约 → 验证码弹窗 → 点字+确定 → 再点立即预约
         """
         try:
             submit_btn = self.driver.find_element(By.CSS_SELECTOR, ".el-button.submit-btn")
             submit_btn.click()
-            return True
         except Exception as e:
             logger.error("❌ 提交失败: %s", e)
             return False
+
+        # 处理点选验证码（如果出现）
+        if not self._handle_click_captcha():
+            return False
+
+        # 验证码通过后，尝试再次点击「立即预约」
+        # 有些情况下系统会自动提交，按钮已消失，两种都算成功
+        try:
+            time.sleep(0.5)
+            submit_btn = WebDriverWait(self.driver, 2).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".el-button.submit-btn"))
+            )
+            submit_btn.click()
+            logger.info("🚀 验证码通过，已再次点击立即预约！")
+        except (TimeoutException, NoSuchElementException):
+            logger.info("🚀 验证码通过，预约已自动提交。")
+        return True
+
+    # ------------------------------------------------------------------
+    #  点选验证码处理
+    # ------------------------------------------------------------------
+
+    def _handle_click_captcha(self, max_retries=5):
+        """
+        检测并处理预约提交后弹出的点选文字验证码。
+        如果没有弹出验证码则直接返回 True。
+        """
+        from core.captcha import click_solver
+
+        # 检测验证码弹窗是否出现
+        try:
+            WebDriverWait(self.driver, 3).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".captcha-modal-container"))
+            )
+        except TimeoutException:
+            # 没有验证码弹窗，直接通过
+            return True
+
+        logger.info("🔐 检测到点选验证码！")
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info("🔄 验证码第 %d/%d 次尝试...", attempt, max_retries)
+                time.sleep(0.5)  # 等待图片渲染
+
+                # ① 提取目标文字图片
+                target_el = self.driver.find_element(
+                    By.CSS_SELECTOR, ".captcha-modal-click img.captcha-text"
+                )
+                target_src = target_el.get_attribute("src") or ""
+                if "base64" not in target_src:
+                    logger.warning("⚠️ 目标文字图片未加载，等待...")
+                    time.sleep(1)
+                    continue
+                target_bytes = base64.b64decode(target_src.split(",", 1)[1])
+
+                # ② 提取背景大图
+                bg_el = self.driver.find_element(
+                    By.CSS_SELECTOR, ".captcha-modal-content img"
+                )
+                bg_src = bg_el.get_attribute("src") or ""
+                if "base64" not in bg_src:
+                    logger.warning("⚠️ 背景图片未加载，等待...")
+                    time.sleep(1)
+                    continue
+                bg_bytes = base64.b64decode(bg_src.split(",", 1)[1])
+
+                # ③ 求解
+                click_points = click_solver.solve(target_bytes, bg_bytes)
+                if not click_points:
+                    logger.warning("⚠️ 验证码求解失败，刷新重试...")
+                    self._refresh_click_captcha()
+                    continue
+
+                # ④ 计算显示尺寸与实际图像的缩放
+                display_w = bg_el.size["width"]
+                display_h = bg_el.size["height"]
+                pil_img = Image.open(BytesIO(bg_bytes))
+                actual_w, actual_h = pil_img.size
+                scale_x = display_w / actual_w
+                scale_y = display_h / actual_h
+
+                # ⑤ 依次点击对应位置
+                for px, py in click_points:
+                    offset_x = px * scale_x - display_w / 2
+                    offset_y = py * scale_y - display_h / 2
+                    ActionChains(self.driver).move_to_element_with_offset(
+                        bg_el, offset_x, offset_y
+                    ).click().perform()
+                    time.sleep(0.3)
+
+                # ⑥ 点击「确定」
+                time.sleep(0.5)
+                confirm_btn = self.driver.find_element(
+                    By.CSS_SELECTOR, ".captcha-modal-footer .confirm-btn"
+                )
+                confirm_btn.click()
+
+                # ⑦ 等待弹窗消失 → 验证通过
+                try:
+                    WebDriverWait(self.driver, 3).until(
+                        EC.invisibility_of_element_located(
+                            (By.CSS_SELECTOR, ".captcha-modal-container")
+                        )
+                    )
+                    logger.info("✅ 点选验证码通过！")
+                    return True
+                except TimeoutException:
+                    logger.warning("⚠️ 验证码未通过，刷新重试...")
+                    self._refresh_click_captcha()
+                    continue
+
+            except Exception as e:
+                logger.warning("⚠️ 验证码处理异常: %s", e)
+                if attempt < max_retries:
+                    self._refresh_click_captcha()
+
+        logger.error("❌ 点选验证码多次尝试均失败")
+        self._save_failure_screenshot("captcha_failed")
+        return False
+
+    def _refresh_click_captcha(self):
+        """点击刷新图标获取新验证码"""
+        try:
+            refresh_btn = self.driver.find_element(
+                By.CSS_SELECTOR, ".captcha-modal-title img.refresh"
+            )
+            refresh_btn.click()
+            time.sleep(1)
+        except Exception:
+            logger.warning("⚠️ 刷新验证码按钮点击失败")
 
     def check_result(self):
         """检查结果"""

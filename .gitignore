@@ -45,3 +45,13 @@ dist/
 *.swp
 mail.txt
 *.png
+
+# Browser profiles (Selenium user data)
+profiles/
+
+# Claude Code
+.claude/
+
+# Temporary debug/test files
+tmp_*
+test_captcha_live.py

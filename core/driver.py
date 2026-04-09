@@ -33,13 +33,17 @@ def _build_options(browser: str):
     # common options
     opts.page_load_strategy = 'eager'
     opts.add_argument('--disable-blink-features=AutomationControlled')
-    opts.add_argument('--disable-images')
     opts.add_argument("--lang=zh-CN")
     opts.add_argument('--no-sandbox')
+    opts.add_argument('--disable-dev-shm-usage')
+    
+    # 修改 User-Agent，去掉可能的 Edge/WebDriver 泄露特征
+    opts.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0')
 
-    # suppress some verbose logging from Chromium
+    # suppress some verbose logging from Chromium and hide automation info
     try:
-        opts.add_experimental_option('excludeSwitches', ['enable-logging'])
+        opts.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation', 'ignore-certificate-errors'])
+        opts.add_experimental_option('useAutomationExtension', False)
     except Exception:
         # older selenium/option implementations may not support experimental options
         pass
@@ -89,6 +93,20 @@ def _download_driver_with_manager(browser: str):
         return None
 
 
+def _apply_stealth(driver):
+    """
+    Remove all CDP JS injections. 
+    Modern WAFs can detect Object.defineProperty on native navigator objects.
+    We rely entirely on --disable-blink-features=AutomationControlled which 
+    removes the webdriver flag at the C++ browser engine level without JS traces.
+    """
+    try:
+        # Just logging, no JS manipulation
+        logger.debug("Relying wholly on C++ blink flags for stealth.")
+    except Exception as e:
+        pass
+
+
 def _clear_stale_driver_cache(browser: str):
     """Remove stale driver binaries from the Selenium cache so SeleniumManager re-downloads."""
     import shutil
@@ -136,6 +154,7 @@ def get_driver(user_data_dir: str = None):
             service = EdgeService(executable_path=DRIVER_PATH, log_path=os.devnull) if browser != 'chrome' else ChromeService(executable_path=DRIVER_PATH, log_path=os.devnull)
             drv = webdriver.Edge(service=service, options=opts) if browser != 'chrome' else webdriver.Chrome(service=service, options=opts)
             drv.set_page_load_timeout(30)
+            _apply_stealth(drv)
             return drv
         else:
             logger.warning("DRIVER_PATH is set but executable not found: %s", DRIVER_PATH)
@@ -149,6 +168,7 @@ def get_driver(user_data_dir: str = None):
         try:
             drv = webdriver.Edge(service=service, options=opts) if browser != 'chrome' else webdriver.Chrome(service=service, options=opts)
             drv.set_page_load_timeout(30)
+            _apply_stealth(drv)
             return drv
         except Exception as e:
             logger.warning("webdriver-manager driver failed (version mismatch?): %s", e)
@@ -165,6 +185,7 @@ def get_driver(user_data_dir: str = None):
             service = ChromeService(log_path=os.devnull)
             drv = webdriver.Chrome(service=service, options=opts)
         drv.set_page_load_timeout(30)
+        _apply_stealth(drv)
         return drv
     except Exception as e:
         msg = (
