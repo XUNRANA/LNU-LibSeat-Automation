@@ -1,4 +1,5 @@
 # python
+import os
 import threading
 import shutil
 import tempfile
@@ -228,9 +229,7 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
     end_time = time_config["end"]
     TARGET_ROOM = _cfg('TARGET_ROOM')
 
-    logger.info("🧵 [%s] 线程启动，目标: %s-%s", account, start_time, end_time)
-
-    tmp_dir = tempfile.mkdtemp(prefix=f"thread_{account}_")
+    # 使用完全纯净卫生的新建无痕浏览器，没有任何历史记录（就像 GitHub 原版一样）
     driver = None
 
     # 根据模式构建日程
@@ -267,10 +266,10 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
         if stop_event.is_set():
             return
 
-        driver = get_driver(tmp_dir)
+        driver = get_driver(None)
         auth = Authenticator(driver)
 
-        if not auth.login(account, password):
+        if not auth.login(account, password, stop_event):
             logger.error("❌ [%s] 登录失败，线程退出", account)
             return
 
@@ -383,21 +382,14 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
     except Exception as e:
         logger.exception("❌ [%s] 线程崩溃: %s", account, e)
     finally:
-        # 优先尝试安全退出 driver，再移除临时目录
         try:
             if driver:
                 try:
                     driver.quit()
                 except Exception:
-                    logger.exception("⚠️ [%s] 浏览器退出失败", account)
+                    pass
         except Exception:
             logger.exception("关闭 driver 时出错")
-        finally:
-            try:
-                shutil.rmtree(tmp_dir)
-            except Exception:
-                logger.exception("删除临时目录失败: %s", tmp_dir)
-
 
 def main(stop_event: threading.Event = None):
     """
@@ -427,7 +419,7 @@ def main(stop_event: threading.Event = None):
             )
             threads.append(t)
             t.start()
-            time.sleep(0.1)  # 稍微错开启动时间
+            time.sleep(5)  # 错开 5 秒启动，避免并发请求触发反爬
 
         # 主线程阻塞等待，支持 Ctrl+C 优雅退出
         while any(t.is_alive() for t in threads):
