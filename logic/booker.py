@@ -191,6 +191,173 @@ class SeatBooker:
         return True
 
     # ------------------------------------------------------------------
+    #  分阶段时序提交（验证码预加载策略）
+    #  流程: 6:29:50 触发 → 预分析 → 6:29:58 点字 → 6:30:00 确定
+    # ------------------------------------------------------------------
+
+    def fire_submit_trigger(self):
+        """
+        时序提交 - 阶段1: 仅点击"立即预约"按钮，触发验证码弹窗。
+        """
+        try:
+            submit_btn = self.driver.find_element(By.CSS_SELECTOR, ".el-button.submit-btn")
+            submit_btn.click()
+            logger.info("🔥 已点击「立即预约」，等待验证码弹窗...")
+            return True
+        except Exception as e:
+            logger.error("❌ 提交按钮点击失败: %s", e)
+            return False
+
+    def pre_solve_captcha(self, max_retries=5):
+        """
+        时序提交 - 阶段2: 预分析点选验证码。
+        在 fire_at 之前完成 OCR 识别和坐标计算，为精确点击做准备。
+
+        Returns:
+            dict: solved/no_captcha 标志 + 预计算的点击数据
+        """
+        from core.captcha import click_solver
+
+        # 等待验证码弹窗出现
+        try:
+            WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".captcha-modal-container"))
+            )
+        except TimeoutException:
+            logger.info("ℹ️ 未检测到验证码弹窗")
+            return {"solved": False, "no_captcha": True}
+
+        logger.info("🔐 检测到点选验证码，开始预分析...")
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info("🔄 预分析第 %d/%d 次...", attempt, max_retries)
+                time.sleep(0.5)  # 等待图片渲染
+
+                # ① 提取目标文字图片
+                target_el = self.driver.find_element(
+                    By.CSS_SELECTOR, ".captcha-modal-click img.captcha-text"
+                )
+                target_src = target_el.get_attribute("src") or ""
+                if "base64" not in target_src:
+                    logger.warning("⚠️ 目标文字图片未加载，等待...")
+                    time.sleep(1)
+                    continue
+                target_bytes = base64.b64decode(target_src.split(",", 1)[1])
+
+                # ② 提取背景大图
+                bg_el = self.driver.find_element(
+                    By.CSS_SELECTOR, ".captcha-modal-content img"
+                )
+                bg_src = bg_el.get_attribute("src") or ""
+                if "base64" not in bg_src:
+                    logger.warning("⚠️ 背景图片未加载，等待...")
+                    time.sleep(1)
+                    continue
+                bg_bytes = base64.b64decode(bg_src.split(",", 1)[1])
+
+                # ③ 求解
+                click_points = click_solver.solve(target_bytes, bg_bytes)
+                if not click_points:
+                    logger.warning("⚠️ 验证码求解失败，刷新重试...")
+                    self._refresh_click_captcha()
+                    continue
+
+                # ④ 计算显示尺寸与实际图像的缩放比
+                display_w = bg_el.size["width"]
+                display_h = bg_el.size["height"]
+                pil_img = Image.open(BytesIO(bg_bytes))
+                actual_w, actual_h = pil_img.size
+                scale_x = display_w / actual_w
+                scale_y = display_h / actual_h
+
+                logger.info("✅ 验证码预分析完成！%d 个点击目标，坐标: %s", len(click_points), click_points)
+                return {
+                    "solved": True,
+                    "no_captcha": False,
+                    "click_points": click_points,
+                    "bg_el": bg_el,
+                    "display_w": display_w,
+                    "display_h": display_h,
+                    "scale_x": scale_x,
+                    "scale_y": scale_y,
+                }
+
+            except Exception as e:
+                logger.warning("⚠️ 预分析异常: %s", e)
+                if attempt < max_retries:
+                    self._refresh_click_captcha()
+
+        logger.error("❌ 验证码预分析 %d 次均失败", max_retries)
+        self._save_failure_screenshot("pre_solve_failed")
+        return {"solved": False, "no_captcha": False}
+
+    def execute_captcha_clicks(self, solve_data):
+        """
+        时序提交 - 阶段3a: 按预计算坐标点击验证码文字。
+        """
+        if not solve_data.get("solved"):
+            return False
+
+        bg_el = solve_data["bg_el"]
+        display_w = solve_data["display_w"]
+        display_h = solve_data["display_h"]
+        scale_x = solve_data["scale_x"]
+        scale_y = solve_data["scale_y"]
+
+        for px, py in solve_data["click_points"]:
+            offset_x = px * scale_x - display_w / 2
+            offset_y = py * scale_y - display_h / 2
+            ActionChains(self.driver).move_to_element_with_offset(
+                bg_el, offset_x, offset_y
+            ).click().perform()
+            time.sleep(0.15)  # 缩短间隔（原 0.3s）提高速度
+
+        logger.info("✅ 验证码文字已全部点击")
+        return True
+
+    def click_captcha_confirm(self):
+        """
+        时序提交 - 阶段3b: 点击验证码"确定"按钮，完成预约。
+        """
+        try:
+            confirm_btn = self.driver.find_element(
+                By.CSS_SELECTOR, ".captcha-modal-footer .confirm-btn"
+            )
+            confirm_btn.click()
+            logger.info("🚀 已点击验证码「确定」！")
+
+            # 等待验证码弹窗消失 → 验证通过
+            try:
+                WebDriverWait(self.driver, 3).until(
+                    EC.invisibility_of_element_located(
+                        (By.CSS_SELECTOR, ".captcha-modal-container")
+                    )
+                )
+                logger.info("✅ 验证码确认通过！")
+            except TimeoutException:
+                logger.warning("⚠️ 验证码可能未通过（弹窗未消失）")
+                self._save_failure_screenshot("captcha_confirm_timeout")
+                return False
+
+            # 尝试再次点击「立即预约」（部分场景需要二次确认）
+            try:
+                time.sleep(0.2)
+                submit_btn = WebDriverWait(self.driver, 1).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, ".el-button.submit-btn"))
+                )
+                submit_btn.click()
+                logger.info("🚀 已再次点击「立即预约」")
+            except (TimeoutException, NoSuchElementException):
+                logger.info("🚀 预约已自动提交")
+
+            return True
+
+        except Exception as e:
+            logger.error("❌ 点击确定按钮失败: %s", e)
+            return False
+
+    # ------------------------------------------------------------------
     #  点选验证码处理
     # ------------------------------------------------------------------
 
