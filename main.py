@@ -26,7 +26,9 @@ logger = get_logger(__name__)
 
 STRICT_NEXT_DAY_CUTOFF = dt_time(10, 0, 0)
 SYSTEM_CLOSE_TIME = dt_time(22, 0, 0)
-PREP_LEAD_SECONDS = 45  # 在 fire_at 前多少秒开始准备（启动浏览器+登录+选座）
+PREP_LEAD_SECONDS = 90  # 在 fire_at 前多少秒开始准备（启动浏览器+登录+选座）
+PRE_SUBMIT_SECONDS = 10  # 在 fire_at 前多少秒点击"立即预约"（触发验证码）
+CAPTCHA_CLICK_SECONDS = 2  # 在 fire_at 前多少秒点击验证码文字
 
 
 def build_strict_schedule(now=None):
@@ -53,11 +55,15 @@ def build_strict_schedule(now=None):
         microsecond=0,
     )
     prep_at = fire_at - timedelta(seconds=PREP_LEAD_SECONDS)
+    pre_fire_at = fire_at - timedelta(seconds=PRE_SUBMIT_SECONDS)
+    captcha_click_at = fire_at - timedelta(seconds=CAPTCHA_CLICK_SECONDS)
     close_at = fire_at.replace(hour=SYSTEM_CLOSE_TIME.hour, minute=SYSTEM_CLOSE_TIME.minute)
 
     return {
         "run_date": run_date,
         "prep_at": prep_at,
+        "pre_fire_at": pre_fire_at,
+        "captcha_click_at": captcha_click_at,
         "fire_at": fire_at,
         "close_at": close_at,
     }
@@ -79,11 +85,15 @@ def build_custom_schedule(target_hour, target_minute, now=None):
         fire_at = fire_at + timedelta(days=1)
 
     prep_at = fire_at - timedelta(seconds=PREP_LEAD_SECONDS)
+    pre_fire_at = fire_at - timedelta(seconds=PRE_SUBMIT_SECONDS)
+    captcha_click_at = fire_at - timedelta(seconds=CAPTCHA_CLICK_SECONDS)
     close_at = fire_at.replace(hour=SYSTEM_CLOSE_TIME.hour, minute=SYSTEM_CLOSE_TIME.minute)
 
     return {
         "run_date": fire_at.date(),
         "prep_at": prep_at,
+        "pre_fire_at": pre_fire_at,
+        "captcha_click_at": captcha_click_at,
         "fire_at": fire_at,
         "close_at": close_at,
     }
@@ -246,10 +256,12 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
 
     if schedule:
         logger.info(
-            "🗓️ [%s] 定时模式日程: %s | 准备 %s → 提交 %s | 截止 %s",
+            "🗓️ [%s] 日程: %s | 准备 %s → 提交 %s → 点字 %s → 确定 %s | 截止 %s",
             account,
             schedule["run_date"].isoformat(),
             schedule["prep_at"].strftime("%H:%M:%S"),
+            schedule["pre_fire_at"].strftime("%H:%M:%S"),
+            schedule["captcha_click_at"].strftime("%H:%M:%S"),
             schedule["fire_at"].strftime("%H:%M:%S"),
             schedule["close_at"].strftime("%H:%M:%S"),
         )
@@ -299,7 +311,7 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
             return
 
         # ───────────────────────────────────────
-        # 阶段 3：等待提交时机
+        # 阶段 3：时序优化提交（验证码预加载策略）
         # ───────────────────────────────────────
         logger.info("🎯 [%s] 座位 %s 已锁定！准备进入提交阶段...", account, target_seat)
 
@@ -308,12 +320,52 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
             return
 
         if state and schedule:
-            ok = wait_until(schedule["fire_at"], account, stop_event, "确认提交")
+            # ─── 阶段 3a：等待 pre_fire_at → 点击"立即预约"触发验证码 ───
+            ok = wait_until(schedule["pre_fire_at"], account, stop_event, "提交预约")
             if not ok:
                 return
 
-        # 开火提交
-        booker.fire_submit()
+            submitted = booker.fire_submit_trigger()
+
+            if submitted:
+                # ─── 阶段 3b：预分析验证码（~1秒内完成）───
+                solve_data = booker.pre_solve_captcha()
+
+                if solve_data.get("solved"):
+                    # ─── 阶段 3c：等待 captcha_click_at → 点击验证码文字 ───
+                    ok = wait_until(schedule["captcha_click_at"], account, stop_event, "点击验证码文字")
+                    if not ok:
+                        return
+                    booker.execute_captcha_clicks(solve_data)
+
+                    # ─── 阶段 3d：等待 fire_at → 点击"确定" ───
+                    ok = wait_until(schedule["fire_at"], account, stop_event, "点击确定")
+                    if not ok:
+                        return
+                    booker.click_captcha_confirm()
+
+                elif solve_data.get("no_captcha"):
+                    logger.info("ℹ️ [%s] 未出现验证码，等待系统开放...", account)
+                    ok = wait_until(schedule["fire_at"], account, stop_event, "系统开放")
+                    if not ok:
+                        return
+                else:
+                    # 预分析失败，回退到 fire_at 时用原方法即时处理
+                    logger.warning("⚠️ [%s] 验证码预分析失败，回退到即时处理模式", account)
+                    ok = wait_until(schedule["fire_at"], account, stop_event, "确认提交")
+                    if not ok:
+                        return
+                    booker._handle_click_captcha()
+            else:
+                # 提交按钮点击失败，回退到完整原流程
+                logger.warning("⚠️ [%s] 提交按钮点击失败，回退到原流程", account)
+                ok = wait_until(schedule["fire_at"], account, stop_event, "确认提交")
+                if not ok:
+                    return
+                booker.fire_submit()
+        else:
+            # 立即模式：使用原始流程
+            booker.fire_submit()
 
         # ───────────────────────────────────────
         # 阶段 4：检查结果 & 失败后重试循环

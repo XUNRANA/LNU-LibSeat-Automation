@@ -27,7 +27,7 @@ import venv
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APP_NAME = "LNU-LibSeat"
-APP_VERSION = "v2.4.0"  # 每次发布新版本请修改此处
+APP_VERSION = "v2.5.0"  # 每次发布新版本请修改此处
 DIST_NAME = f"{APP_NAME}-{APP_VERSION}"
 DIST_DIR = os.path.join(ROOT, "dist", DIST_NAME)
 VENV_DIR = os.path.join(ROOT, ".build_venv")
