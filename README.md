@@ -72,7 +72,7 @@
 
 **无需安装 Python，无需任何编程知识！**
 
-1. 前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载最新版 `LNU-LibSeat-v2.4.0.zip`
+1. 前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载最新版 `LNU-LibSeat-v2.5.0.zip`
 2. 解压到任意位置
 3. 双击 `LNU-LibSeat.exe`，在 GUI 界面中填写学号、密码、座位号等（GUI 会自动保存到本地 `config.py`）
 4. 点击「开始抢座」，完事！
