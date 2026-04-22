@@ -87,7 +87,7 @@ main()
 ```
 thread_task(account, password, time_config, stop_event)
  │
- ├── 阶段 0：等待 6:29:15 (prep_at) → 准备就绪 (含 30 分钟心跳日志)
+ ├── 阶段 0：等待 prep_at → 准备就绪 (含 30 分钟心跳日志)
  │   ├── 启动纯净无痕浏览器（无临时目录依赖）
  │   ├── Authenticator(driver).login(account, password, stop_event)
  │   │   ├── 打开登录页 → WebDriverWait 等页面就绪
@@ -97,23 +97,25 @@ thread_task(account, password, time_config, stop_event)
  │   │   ├── ddddocr OCR 识别
  │   │   ├── 填入验证码 → 点击登录
  │   │   └── 检测成功标志 (header-username)
- │   ├── enter_room(TARGET_ROOM) — 选校区 + 进自习室
- │   └── attempt_seat_selection() — 统一选座逻辑
- │       └── for seat in PREFER_SEATS:
- │           └── booker.select_time_and_wait(seat, start, end)
+ │   ├── enter_room(TARGET_ROOM) — 预进入目标自习室
+ │   └── wait_until(fire_at) — 等待开抢时刻
  │
- ├── 阶段 1：等待 6:30:00 (fire_at) → 准时 fire_submit()
- │   ├── 点击「立即预约」按钮
- │   ├── _handle_click_captcha()  ← 🆕 点选验证码处理
+ ├── 阶段 1：fire_at 到时 → 点座 + 立即提交流程
+ │   ├── attempt_seat_selection() — 统一选座逻辑
+ │   │   └── for seat in PREFER_SEATS:
+ │   │       └── booker.select_time_and_wait(seat, start, end)
+ │   ├── fire_submit()
+ │   │   ├── 点击「立即预约」按钮
+ │   │   ├── _handle_click_captcha()  ← 点选验证码处理
  │   │   ├── 检测验证码弹窗是否出现
  │   │   ├── 提取目标文字图片 + 背景大图 (base64)
  │   │   ├── click_solver.solve() — ddddocr 检测+分类
  │   │   ├── ActionChains 依次点击匹配文字位置
  │   │   ├── 点击「确定」→ 等待弹窗消失
- │   │   └── 失败自动刷新重试（最多 5 次）
- │   └── 验证码通过后尝试再次点击「立即预约」
+ │   │   ├── 失败自动刷新重试（最多 5 次）
+ │   │   └── 验证码通过后尝试再次点击「立即预约」
  │
- └── 阶段 2：检查结果
+ └── 阶段 2：检查结果与重试
      ├── booker.check_result()
      │   ├── "预约成功"/"有效预约" → 成功 ✅
      │   └── "已有预约"/"预约失败" → 失败 (自动截图) → 重试
@@ -167,7 +169,8 @@ thread_task(account, password, time_config, stop_event)
 **`ClickCaptchaSolver`（预约点选验证码）** 🆕：
 - 全局单例 `click_solver`，ddddocr 检测引擎 (`det=True`) + 分类引擎 (`det=False`)
 - `solve(target_bytes, bg_bytes)` → 返回按顺序的点击坐标 `[(x, y), ...]`
-- 流程：识别目标文字 → 检测背景图文字区域 → 逐个裁剪 OCR → 匹配目标 → 输出坐标
+- 支持目标串 **1~4 字**，并强制按目标顺序点击
+- 流程：识别目标文字 → 检测背景图文字区域 → 逐个裁剪 OCR（多候选）→ 顺序匹配目标 → 输出坐标
 
 ### `core/logger.py` — 日志系统
 
@@ -219,7 +222,7 @@ thread_task(account, password, time_config, stop_event)
 | **threading 而非 asyncio** | Selenium 是同步 API；多线程简单直接 |
 | **纯净无痕浏览器** | 每线程创建全新浏览器实例（`user_data_dir=None`），无历史数据干扰 |
 | **stop_event 贯穿全链路** | 替代轮询 `time.sleep`，支持 Ctrl+C 快速退出 |
-| **两阶段卡点** | 06:29:15 顺序完成启动+登录+选座，6:30:00 只需一次点击 |
+| **到点开抢** | 提前完成登录和页面预热，目标时刻才执行点座与验证码确认 |
 | **JS 点击而非原生 click** | 避免悬浮层遮挡导致的 `ElementClickInterceptedException` |
 | **ddddocr 单例** | 模型加载耗时，全局共享减少开销（登录 OCR + 点选检测/分类共 3 个实例） |
 | **attempt_seat_selection 复用** | 准备阶段和失败重试 共用选座逻辑，消除代码重复 |
