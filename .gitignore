@@ -57,3 +57,6 @@ profiles/
 # Temporary debug/test files
 tmp_*
 test_captcha_live.py
+
+# Editor / AI tools
+.omc/
