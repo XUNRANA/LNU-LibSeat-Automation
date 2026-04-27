@@ -27,13 +27,16 @@ import venv
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APP_NAME = "LNU-LibSeat"
-APP_VERSION = "v2.6.0"  # 每次发布新版本请修改此处
+APP_VERSION = "v2.7.0"  # 每次发布新版本请修改此处
 DIST_NAME = f"{APP_NAME}-{APP_VERSION}"
 DIST_DIR = os.path.join(ROOT, "dist", DIST_NAME)
 VENV_DIR = os.path.join(ROOT, ".build_venv")
 
 # Only these packages (and their dependencies) go into the exe
-BUILD_DEPS = ["pyinstaller", "selenium", "ddddocr", "customtkinter"]
+BUILD_DEPS = [
+    "pyinstaller", "selenium", "ddddocr", "customtkinter",
+    "opencv-python", "numpy", "mss", "Pillow", "requests",
+]
 
 
 def _venv_python():
@@ -94,6 +97,9 @@ def build():
         "--collect-all", "onnxruntime",
         "--collect-all", "selenium",
         "--collect-all", "customtkinter",
+        "--collect-all", "cv2",
+        "--collect-all", "mss",
+        "--collect-all", "numpy",
 
         # Do NOT bundle config.py — users edit the external copy
         "--exclude-module", "config",
@@ -145,7 +151,7 @@ USERS = {
 
 TARGET_CAMPUS = "崇山校区图书馆"
 TARGET_ROOM = "三楼智慧研修空间"
-PREFER_SEATS = ["001", "002", "003", "004"]
+PREFER_SEATS = ["001", "002", "003", "004", "005", "006", "007", "008", "009", "010"]
 
 WAIT_FOR_0630 = True
 HEADLESS = True
