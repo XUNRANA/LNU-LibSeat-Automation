@@ -148,7 +148,7 @@ class App(ctk.CTk):
         # ── 变量 ──
         self.var_campus = tk.StringVar(value="崇山校区图书馆")
         self.var_room = tk.StringVar(value="三楼智慧研修空间")
-        self.seat_vars = [tk.StringVar() for _ in range(4)]
+        self.seat_vars = [tk.StringVar() for _ in range(10)]
         self.var_email = tk.StringVar()
         self.var_mode = tk.StringVar(value="scheduled")
         self.var_sched_hour = tk.StringVar(value="06")
@@ -348,20 +348,33 @@ class App(ctk.CTk):
         self.room_combo.configure(width=200, height=34)
         self.room_combo.pack(side=tk.LEFT)
         
-        # 第三行：优先座位
+        # 第三行：优先座位 (10 个，分两行显示)
         row3 = ctk.CTkFrame(content, fg_color="transparent")
         row3.pack(fill=tk.X)
-        
         ctk.CTkLabel(row3, text="优先座位", font=LABEL_FONT, text_color=C["text"],
                      width=80, anchor="w").pack(side=tk.LEFT)
-        
-        for i, sv in enumerate(self.seat_vars):
+        for i in range(5):
+            sv = self.seat_vars[i]
             seat_entry = ctk.CTkEntry(
-                row3, textvariable=sv, width=60, height=34,
+                row3, textvariable=sv, width=54, height=34,
                 font=(FONT_MONO, 14), corner_radius=6,
                 fg_color="#ffffff", border_color=C["input_border"],
                 text_color=C["text"], justify="center", border_width=1,
-                placeholder_text=f"00{i+1}"
+                placeholder_text=f"{i+1:03d}"
+            )
+            seat_entry.pack(side=tk.LEFT, padx=(0, 6))
+
+        row3b = ctk.CTkFrame(content, fg_color="transparent")
+        row3b.pack(fill=tk.X, pady=(6, 0))
+        ctk.CTkLabel(row3b, text="", font=LABEL_FONT, width=80, anchor="w").pack(side=tk.LEFT)
+        for i in range(5, 10):
+            sv = self.seat_vars[i]
+            seat_entry = ctk.CTkEntry(
+                row3b, textvariable=sv, width=54, height=34,
+                font=(FONT_MONO, 14), corner_radius=6,
+                fg_color="#ffffff", border_color=C["input_border"],
+                text_color=C["text"], justify="center", border_width=1,
+                placeholder_text=f"{i+1:03d}"
             )
             seat_entry.pack(side=tk.LEFT, padx=(0, 6))
 

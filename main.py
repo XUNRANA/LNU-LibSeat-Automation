@@ -24,11 +24,19 @@ def _cfg(attr, default=None):
 
 logger = get_logger(__name__)
 
+# =================== 全局开关 ===================
+# True = 任何时间段抢座都强制走 ttshitu API（忽略 6:30:00-6:35:00 时间窗口）
+# False = 仅 6:30:00-6:35:00 抢座窗口使用 API，其余时段使用本地 ddddocr
+FORCE_API_ALWAYS = True
+# ================================================
+
 STRICT_NEXT_DAY_CUTOFF = dt_time(10, 0, 0)
 SYSTEM_CLOSE_TIME = dt_time(22, 0, 0)
-PREP_LEAD_SECONDS = 90  # 在 fire_at 前多少秒开始准备（启动浏览器+登录+选座）
-PRE_SUBMIT_SECONDS = 10  # 在 fire_at 前多少秒点击"立即预约"（触发验证码）
-CAPTCHA_CLICK_SECONDS = 2  # 在 fire_at 前多少秒点击验证码文字
+PREP_LEAD_SECONDS = 60  # 6:29:00 打开浏览器：fire_at 前 60s 启动并登录+进入自习室
+PRE_SUBMIT_SECONDS = 10  # 6:29:50 触发验证码并点击文字：fire_at 前 10s
+CAPTCHA_CLICK_SECONDS = 10  # 与 PRE_SUBMIT_SECONDS 同步：触发后立即开始点击文字
+CAPTCHA_RETRIES_PER_SEAT = 10  # 每个优先座位最多给 10 次点选验证码机会
+FIRE_LEAD_MS = 30  # 抢座 RTT 补偿:提前 30ms 醒来,让 click 请求大致在 fire_at 整点到达服务端
 BROWSER_SESSION_WINDOW_MINUTES = 5
 BROWSER_SESSION_MAX_ATTEMPTS = 6
 STRICT_RESTART_END_TIME = dt_time(7, 0, 0)
@@ -256,6 +264,57 @@ def build_browser_session_plan(schedule, schedule_mode="strict"):
     }
 
 
+def _enlarge_driver_pool(driver, pool_size: int = 10):
+    """
+    把 Selenium 的 urllib3 连接池放大到 pool_size。
+    默认 maxsize=1 时,录屏线程和主线程同时调 driver 会触发
+    "Connection pool is full, discarding connection" 警告。
+    """
+    try:
+        import urllib3
+        driver.command_executor._conn = urllib3.PoolManager(
+            num_pools=pool_size, maxsize=pool_size, timeout=120,
+        )
+    except Exception as e:
+        logger.debug("放大连接池失败 (可忽略): %s", e)
+
+
+def _apply_window_layout(driver, account, slot_index, slot_total):
+    """
+    根据是否 headless 决定窗口布局:
+      - headless: 不可见,两个浏览器都铺满主屏(viewport 越大,内部截图越清晰)
+      - 非 headless: 等分主屏槽位 (2 个账号 → 左右半屏)
+    """
+    if slot_total <= 0 or slot_index < 0 or slot_index >= slot_total:
+        return
+    try:
+        import mss as _mss
+        with _mss.mss() as sct:
+            mon = sct.monitors[1]
+            screen_x = int(mon.get("left", 0))
+            screen_y = int(mon.get("top", 0))
+            screen_w = int(mon.get("width", 1920))
+            screen_h = int(mon.get("height", 1080))
+        is_headless = bool(_cfg("HEADLESS", True))
+        if is_headless:
+            x, y, w, h = screen_x, screen_y, screen_w, screen_h
+        else:
+            taskbar_margin = 60
+            usable_h = max(400, screen_h - taskbar_margin)
+            slot_w = screen_w // slot_total
+            x = screen_x + slot_w * slot_index
+            y = screen_y
+            w = slot_w
+            h = usable_h
+        driver.set_window_position(x, y)
+        driver.set_window_size(w, h)
+        mode = "headless 全屏" if is_headless else f"slot {slot_index + 1}/{slot_total}"
+        logger.info("🪟 [%s] 浏览器窗口布局 (%s): (%d,%d) %dx%d",
+                    account, mode, x, y, w, h)
+    except Exception as e:
+        logger.warning("⚠️ [%s] 窗口布局失败,保持默认位置: %s", account, e)
+
+
 def _close_driver_quietly(driver):
     if not driver:
         return
@@ -349,6 +408,149 @@ def attempt_seat_selection(driver, booker, account, start_time, end_time, stop_e
     return None
 
 
+def run_timed_priority_attack(
+    driver,
+    booker,
+    account,
+    start_time,
+    end_time,
+    schedule,
+    session_stop,
+    stop_event,
+):
+    """
+    "准点抢座"主流程（单浏览器会话）：
+
+    - 定时模式 (schedule != None)：
+        6:29:50 (pre_fire_at) 触发"立即预约" + 解析验证码 + 依次点击文字
+        6:30:00 (fire_at)      点击验证码"确定"按钮提交
+    - 立即模式 (schedule = None)：直接触发 + 解决 + 立即点确定
+    - 每个优先座位最多 10 次验证码机会；超过则切到下一优先级
+    - 10 个优先级全失败 → 退出，不重启浏览器
+
+    返回:
+      ("success", seat) | ("all_failed", None) | ("stopped", None) | ("restart", None)
+    """
+    PREFER_SEATS = _cfg('PREFER_SEATS', []) or []
+    if not PREFER_SEATS:
+        logger.warning("⚠️ [%s] 未配置 PREFER_SEATS，无法执行优先级抢座。", account)
+        return ("all_failed", None)
+
+    fire_at = schedule["fire_at"] if schedule else None
+    pre_fire_at = schedule["pre_fire_at"] if schedule else None
+
+    # 用于"第一个成功锁住的座位才走 pre_fire_at / fire_at 同步等待"。
+    # 优先级 1、2 锁不到时，自动让位给优先级 3 等定时点触发。
+    timed_window_consumed = False
+
+    for priority, seat in enumerate(PREFER_SEATS, start=1):
+        if session_stop.is_set():
+            return ("stopped", None) if stop_event.is_set() else ("restart", None)
+
+        logger.info("🎯 [%s] === 开始尝试优先级 %d 座位 %s ===", account, priority, seat)
+
+        # 1) 锁定座位（弹时间选择框 + 选时间）
+        if not booker.select_time_and_wait(seat, start_time, end_time):
+            logger.warning("⚠️ [%s] 优先级 %d 座位 %s 锁定失败，继续下一优先级。", account, priority, seat)
+            continue
+
+        # 2) 定时模式 + 还没消费过定时窗口 → 等到 pre_fire_at 再触发；其余立刻触发
+        is_first_locked_seat = not timed_window_consumed
+        if is_first_locked_seat and pre_fire_at is not None:
+            ok = wait_until(pre_fire_at, account, session_stop, f"等待 {pre_fire_at.strftime('%H:%M:%S')} 触发验证码")
+            if not ok:
+                booker.close_popup()
+                if stop_event.is_set():
+                    return ("stopped", None)
+                return ("restart", None)
+
+        # 3) 触发"立即预约" → 弹出验证码弹窗
+        if not booker.fire_submit_trigger():
+            logger.warning("⚠️ [%s] 优先级 %d 触发提交失败，关闭弹窗换下一优先级", account, priority)
+            booker.close_popup()
+            continue
+
+        # 4) 验证码循环：最多 CAPTCHA_RETRIES_PER_SEAT 次机会
+        captcha_passed = False
+        first_round_for_priority = True
+
+        for retry in range(1, CAPTCHA_RETRIES_PER_SEAT + 1):
+            if session_stop.is_set():
+                if stop_event.is_set():
+                    return ("stopped", None)
+                return ("restart", None)
+
+            logger.info(
+                "🔁 [%s] 优先级 %d 第 %d/%d 次验证码尝试...",
+                account, priority, retry, CAPTCHA_RETRIES_PER_SEAT,
+            )
+
+            # 4a) 解析 + 点击文字（pre_solve_captcha 内部已做单次的图片就绪等待）
+            solve_data = booker.pre_solve_captcha(max_retries=1)
+            if solve_data.get("no_captcha"):
+                logger.info("ℹ️ [%s] 未检测到验证码弹窗，直接进入结果检查。", account)
+                captcha_passed = True
+                break
+            if not solve_data.get("solved"):
+                logger.warning("⚠️ [%s] 第 %d 次解析失败，刷新验证码。", account, retry)
+                booker._refresh_click_captcha()
+                continue
+            if not booker.execute_captcha_clicks(solve_data):
+                booker._refresh_click_captcha()
+                continue
+
+            # 4b) 第一个成功锁住的座位 + 第 1 次重试 + 定时模式：等到 fire_at 再点确定
+            if is_first_locked_seat and first_round_for_priority and fire_at is not None:
+                first_round_for_priority = False
+                timed_window_consumed = True  # 定时窗口已消费，后续座位走立即模式
+                # RTT 补偿:提前 FIRE_LEAD_MS 醒来,让 click 的 HTTP 请求大致在 fire_at 整点抵达服务端
+                early_fire_at = fire_at - timedelta(milliseconds=FIRE_LEAD_MS)
+                ok = wait_until(early_fire_at, account, session_stop,
+                                f"等待 {fire_at.strftime('%H:%M:%S')} 提交确定 (提前 {FIRE_LEAD_MS}ms)")
+                if not ok:
+                    if stop_event.is_set():
+                        return ("stopped", None)
+                    return ("restart", None)
+            else:
+                first_round_for_priority = False
+                if is_first_locked_seat:
+                    timed_window_consumed = True
+
+            # 4c) 点击确定
+            if booker.click_captcha_confirm():
+                captcha_passed = True
+                break
+            logger.warning("⚠️ [%s] 第 %d 次确认未通过，准备刷新验证码重试。", account, retry)
+            # API 识别错了 → 自动上报，5 分钟内退费
+            booker._report_api_error_safe(solve_data.get("api_id"))
+            booker._refresh_click_captcha()
+
+        if not captcha_passed:
+            logger.warning(
+                "💔 [%s] 优先级 %d 座位 %s 在 %d 次重试后仍未通过验证码，切下一优先级。",
+                account, priority, seat, CAPTCHA_RETRIES_PER_SEAT,
+            )
+            booker.close_popup()
+            continue
+
+        # 5) 验证码通过 → 检查最终结果
+        if booker.check_result():
+            logger.info("🎉🎉🎉 [%s] 优先级 %d 座位 %s 抢座成功！", account, priority, seat)
+            return ("success", seat)
+
+        logger.warning("💔 [%s] 优先级 %d 座位 %s 提交后被拒绝，尝试下一优先级。", account, priority, seat)
+        try:
+            driver.find_element("class name", "close-icon").click()
+        except Exception:
+            pass
+
+    logger.error(
+        "❌ [%s] 全部 %d 个优先级座位都失败，按用户要求停止当前会话。",
+        account, len(PREFER_SEATS),
+    )
+    return ("all_failed", None)
+
+
 def run_browser_session(
     account,
     password,
@@ -359,6 +561,8 @@ def run_browser_session(
     session_deadline=None,
     wait_for_fire=False,
     session_index=1,
+    slot_index=0,
+    slot_total=1,
 ):
     """
     执行单轮浏览器会话。
@@ -372,6 +576,7 @@ def run_browser_session(
 
     TARGET_ROOM = _cfg('TARGET_ROOM')
     driver = None
+    recorder = None
     session_stop = DeadlineStopEvent(stop_event, session_deadline)
     watchdog_cancel = threading.Event()
     watchdog_thread = None
@@ -388,6 +593,22 @@ def run_browser_session(
             logger.info("🌐 [%s] 浏览器会话启动。", account)
 
         driver = get_driver(None)
+
+        # 录屏线程会跟主线程并发调 driver,放大连接池避免 urllib3 刷"pool full"警告
+        _enlarge_driver_pool(driver, pool_size=10)
+
+        # 先把窗口摆到指定槽位(双账号: 左半屏 / 右半屏),录屏才能录到正确区域
+        _apply_window_layout(driver, account, slot_index, slot_total)
+
+        # 浏览器一开,立刻全程录屏 Edge 窗口区域,直到 finally 关闭浏览器
+        try:
+            from core.screen_recorder import EdgeWindowRecorder
+            recorder = EdgeWindowRecorder(driver, account=account, log_dir=_cfg("LOG_DIR") or "logs")
+            recorder.start()
+        except Exception as rec_err:
+            logger.warning("⚠️ [%s] 录屏启动失败,继续无录屏运行: %s", account, rec_err)
+            recorder = None
+
         if session_deadline:
             watchdog_thread = threading.Thread(
                 target=_watch_session_deadline,
@@ -411,7 +632,7 @@ def run_browser_session(
                 logger.error("❌ [%s] 第 %d 轮浏览器会话登录失败。", account, session_index)
             return "restart"
 
-        booker = SeatBooker(driver)
+        booker = SeatBooker(driver, account=account)
         pre_navigated = False
 
         if wait_for_fire and schedule:
@@ -419,140 +640,68 @@ def run_browser_session(
             if enter_room(driver, target_campus, TARGET_ROOM):
                 pre_navigated = True
                 logger.info(
-                    "🎯 [%s] 第 %d 轮已提前进入目标自习室，等待 %s 准时点座...",
+                    "🎯 [%s] 第 %d 轮已提前进入目标自习室，等待 %s 准时锁座...",
                     account,
                     session_index,
-                    schedule["fire_at"].strftime("%H:%M:%S"),
+                    schedule["pre_fire_at"].strftime("%H:%M:%S"),
                 )
             else:
                 logger.warning("⚠️ [%s] 第 %d 轮预进入自习室失败，将在开抢时重试进入。", account, session_index)
+                if not enter_room(driver, target_campus, TARGET_ROOM):
+                    logger.error("❌ [%s] 第 %d 轮二次进入自习室仍失败，重启。", account, session_index)
+                    return "restart"
 
-            ok = wait_until(schedule["fire_at"], account, session_stop, "开始抢座")
-            if not ok:
-                if stop_event.is_set():
-                    return "stopped"
-                return "restart"
-
-        target_seat = None
-        first_attempt = True
-        while not session_stop.is_set():
-            try:
-                navigate = not (wait_for_fire and first_attempt and pre_navigated)
-                target_seat = attempt_seat_selection(
-                    driver,
-                    booker,
-                    account,
-                    start_time,
-                    end_time,
-                    session_stop,
-                    schedule,
-                    navigate=navigate,
-                )
-                first_attempt = False
-                if target_seat or session_stop.is_set():
-                    break
-            except Exception as e:
-                logger.warning("⚠️ [%s] 第 %d 轮选座异常: %s，正在恢复...", account, session_index, e)
-                logger.exception("Traceback:")
-                try:
-                    driver.refresh()
-                    if session_stop.wait(timeout=2):
-                        break
-                except Exception:
-                    logger.exception("刷新失败")
-
-        if not target_seat or session_stop.is_set():
-            if stop_event.is_set():
+            # === 定时模式核心：6:29:50 触发验证码 / 6:30:00 点确定 / 10 优先级回退 ===
+            start_time_cfg = start_time
+            end_time_cfg = end_time
+            outcome, target_seat = run_timed_priority_attack(
+                driver,
+                booker,
+                account,
+                start_time_cfg,
+                end_time_cfg,
+                schedule,
+                session_stop,
+                stop_event,
+            )
+            if outcome == "stopped":
                 return "stopped"
-            if session_stop.deadline_reached():
-                logger.info(
-                    "🛑 [%s] 第 %d 轮在 %s 前未锁定到可提交座位。",
-                    account,
-                    session_index,
-                    session_deadline.strftime("%H:%M:%S"),
-                )
+            if outcome == "success":
+                _notify_success(account, TARGET_ROOM, target_seat, start_time_cfg, end_time_cfg)
+                return "success"
+            if outcome == "all_failed":
+                # 用户要求：第 10 优先级也失败 → 程序停止
+                logger.info("🛑 [%s] 全部 10 个优先级抢座失败，程序终止当前账号任务。", account)
+                stop_event.set()
+                return "stopped"
+            # outcome == "restart"
             return "restart"
 
-        logger.info("🎯 [%s] 座位 %s 已锁定！准备进入提交阶段...", account, target_seat)
-
-        if schedule and is_after_close(schedule["close_at"]):
-            logger.info("🛑 [%s] 已超过当日系统关闭时间 %s，放弃提交。", account, schedule["close_at"].strftime("%H:%M:%S"))
+        # 立即模式：进入自习室 → 直接走优先级抢座
+        target_campus = _cfg('TARGET_CAMPUS')
+        if not enter_room(driver, target_campus, TARGET_ROOM):
+            logger.error("❌ [%s] 进入自习室失败。", account)
             return "restart"
 
-        if not booker.fire_submit():
-            logger.warning("⚠️ [%s] 提交流程未完成，进入结果检查与重试流程", account)
-
-        if booker.check_result():
-            logger.info("🎉🎉🎉 [%s] 抢座成功！任务结束！", account)
+        outcome, target_seat = run_timed_priority_attack(
+            driver,
+            booker,
+            account,
+            start_time,
+            end_time,
+            None,  # 无 schedule，直接抢
+            session_stop,
+            stop_event,
+        )
+        if outcome == "stopped":
+            return "stopped"
+        if outcome == "success":
             _notify_success(account, TARGET_ROOM, target_seat, start_time, end_time)
             return "success"
-
-        logger.info("😭 [%s] 第 %d 轮首次提交失败，继续在本轮浏览器会话内重试...", account, session_index)
-        try:
-            driver.find_element("class name", "close-icon").click()
-        except Exception:
-            pass
-        try:
-            driver.refresh()
-        except Exception:
-            logger.exception("刷新失败")
-
-        while not session_stop.is_set():
-            try:
-                if session_stop.wait(timeout=0.5):
-                    break
-
-                retry_seat = attempt_seat_selection(
-                    driver,
-                    booker,
-                    account,
-                    start_time,
-                    end_time,
-                    session_stop,
-                    schedule,
-                )
-                if session_stop.is_set():
-                    break
-                if not retry_seat:
-                    continue
-
-                booker.fire_submit()
-
-                if booker.check_result():
-                    logger.info("🎉🎉🎉 [%s] 第 %d 轮浏览器会话重试抢座成功！", account, session_index)
-                    _notify_success(account, TARGET_ROOM, retry_seat, start_time, end_time)
-                    return "success"
-
-                logger.info("😭 [%s] 第 %d 轮重试提交失败，继续...", account, session_index)
-                try:
-                    driver.find_element("class name", "close-icon").click()
-                except Exception:
-                    pass
-                try:
-                    driver.refresh()
-                except Exception:
-                    logger.exception("刷新失败")
-
-            except Exception as e:
-                logger.warning("⚠️ [%s] 第 %d 轮重试异常: %s", account, session_index, e)
-                logger.exception("Traceback:")
-                try:
-                    driver.refresh()
-                    if session_stop.wait(timeout=2):
-                        break
-                except Exception:
-                    logger.exception("刷新失败")
-
-        if stop_event.is_set():
-            return "stopped"
-        if session_stop.deadline_reached():
-            logger.info(
-                "🛑 [%s] 第 %d 轮浏览器会话达到截止时间 %s，准备强制退出并重启浏览器。",
-                account,
-                session_index,
-                session_deadline.strftime("%H:%M:%S"),
-            )
-        return "restart"
+        # all_failed 或 restart 都按"全部失败"对待 → 不再重启
+        logger.info("🛑 [%s] 立即模式 10 个优先级座位全部失败，退出。", account)
+        stop_event.set()
+        return "stopped"
 
     except Exception as e:
         logger.exception("❌ [%s] 第 %d 轮浏览器会话崩溃: %s", account, session_index, e)
@@ -563,22 +712,30 @@ def run_browser_session(
         watchdog_cancel.set()
         if watchdog_thread:
             watchdog_thread.join(timeout=1)
+        # 关浏览器之前先停录屏(否则窗口已经被销毁,最后几帧会取到桌面)
+        if recorder is not None:
+            try:
+                recorder.stop()
+            except Exception:
+                pass
         _close_driver_quietly(driver)
 
 
-def thread_task(account, password, time_config, stop_event: threading.Event, state=True):
+def thread_task(account, password, time_config, stop_event: threading.Event, state=True,
+                slot_index=0, slot_total=1):
     """
-    单个账号的执行逻辑。
-    严格模式流程：提前登录/预进入房间 → 6:30:00 准时点座并立即提交流程。
+    单个账号的执行逻辑（单浏览器会话，无重启）：
+      - 定时模式：等到 prep_at(6:29:00) 启动浏览器，6:29:50 触发验证码，6:30:00 点确定
+      - 立即模式：直接启动浏览器开抢
+      - 10 个优先级座位逐个尝试，每个座位 10 次验证码机会
+      - 全部失败 → 退出
     """
     start_time = time_config["start"]
     end_time = time_config["end"]
 
-    # 根据模式构建日程
     schedule = None
-    schedule_mode = 'strict'
     if state:
-        schedule_mode = _cfg('SCHEDULE_MODE', 'strict')  # strict / custom
+        schedule_mode = _cfg('SCHEDULE_MODE', 'strict')
         if schedule_mode == 'custom':
             schedule = build_custom_schedule(
                 _cfg('SCHEDULE_HOUR', 6),
@@ -588,88 +745,22 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
             schedule = build_strict_schedule()
 
     if schedule:
-        session_plan = build_browser_session_plan(schedule, schedule_mode)
-        deadline_preview = ", ".join(ts.strftime("%H:%M:%S") for ts in session_plan["session_deadlines"])
         logger.info(
-            "🗓️ [%s] 日程: %s | 准备 %s → 开抢(点座+验证码+确定) %s | 截止 %s",
+            "🗓️ [%s] 日程: %s | 准备 %s → 触发验证码 %s → 点确定 %s | 截止 %s",
             account,
             schedule["run_date"].isoformat(),
             schedule["prep_at"].strftime("%H:%M:%S"),
+            schedule["pre_fire_at"].strftime("%H:%M:%S"),
             schedule["fire_at"].strftime("%H:%M:%S"),
             schedule["close_at"].strftime("%H:%M:%S"),
         )
-        logger.info(
-            "🔁 [%s] 浏览器重启策略: 每轮 %d 分钟，最多 %d 轮，整体抢到 %s 为止。",
-            account,
-            BROWSER_SESSION_WINDOW_MINUTES,
-            len(session_plan["session_deadlines"]),
-            session_plan["overall_end"].strftime("%H:%M:%S"),
-        )
-        logger.info("🔁 [%s] 浏览器强制重启时间点: %s", account, deadline_preview)
-    else:
-        session_plan = None
+        logger.info("🚀 [%s] 单浏览器会话策略：10 个优先级座位逐个尝试，每个座位最多 10 次验证码机会。", account)
 
     try:
         if state and schedule:
-            session_deadlines = session_plan["session_deadlines"]
-            for session_index, session_deadline in enumerate(session_deadlines, start=1):
-                session_start = schedule["prep_at"] if session_index == 1 else session_deadlines[session_index - 2]
-                stage_name = "准备第1轮浏览器会话" if session_index == 1 else f"启动第{session_index}轮浏览器会话"
-
-                ok = wait_until(session_start, account, stop_event, stage_name)
-                if not ok:
-                    return
-                if stop_event.is_set():
-                    return
-
-                result = run_browser_session(
-                    account,
-                    password,
-                    start_time,
-                    end_time,
-                    stop_event,
-                    schedule=schedule,
-                    session_deadline=session_deadline,
-                    wait_for_fire=(session_index == 1),
-                    session_index=session_index,
-                )
-                if result in ("success", "stopped"):
-                    return
-
-                if session_index < len(session_deadlines):
-                    logger.info(
-                        "🔄 [%s] 第 %d 轮浏览器会话结束，将在 %s 从头重启浏览器继续抢座。",
-                        account,
-                        session_index,
-                        session_deadline.strftime("%H:%M:%S"),
-                    )
-
-            logger.info(
-                "🛑 [%s] 已到整体截止时间 %s，且最多只重启 %d 轮浏览器，任务结束。",
-                account,
-                session_plan["overall_end"].strftime("%H:%M:%S"),
-                len(session_deadlines),
-            )
-            return
-
-        logger.info(
-            "🔁 [%s] 立即模式浏览器重启策略: 每轮 %d 分钟，最多 %d 轮；到点无论卡在哪一步都强制退出浏览器并重启。",
-            account,
-            BROWSER_SESSION_WINDOW_MINUTES,
-            BROWSER_SESSION_MAX_ATTEMPTS,
-        )
-        for session_index in range(1, BROWSER_SESSION_MAX_ATTEMPTS + 1):
-            if stop_event.is_set():
+            ok = wait_until(schedule["prep_at"], account, stop_event, "准备启动浏览器")
+            if not ok or stop_event.is_set():
                 return
-
-            session_deadline = utils.get_beijing_time() + timedelta(minutes=BROWSER_SESSION_WINDOW_MINUTES)
-            logger.info(
-                "🔁 [%s] 立即模式第 %d/%d 轮开始，本轮硬截止 %s。",
-                account,
-                session_index,
-                BROWSER_SESSION_MAX_ATTEMPTS,
-                session_deadline.strftime("%H:%M:%S"),
-            )
 
             result = run_browser_session(
                 account,
@@ -677,26 +768,34 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
                 start_time,
                 end_time,
                 stop_event,
-                schedule=None,
-                session_deadline=session_deadline,
-                wait_for_fire=False,
-                session_index=session_index,
+                schedule=schedule,
+                session_deadline=None,
+                wait_for_fire=True,
+                session_index=1,
+                slot_index=slot_index,
+                slot_total=slot_total,
             )
-            if result in ("success", "stopped"):
-                return
+            logger.info("🛑 [%s] 抢座任务结束（结果: %s）。", account, result)
+            return
 
-            if session_index < BROWSER_SESSION_MAX_ATTEMPTS:
-                logger.info(
-                    "🔄 [%s] 立即模式第 %d 轮结束，立刻重启浏览器进入下一轮。",
-                    account,
-                    session_index,
-                )
-
-        logger.info(
-            "🛑 [%s] 立即模式已达到最多 %d 轮浏览器会话，任务结束。",
+        # 立即模式：直接开抢，无重启
+        logger.info("🚀 [%s] 立即模式：单浏览器会话，10 个优先级座位逐个尝试，每个 10 次验证码机会。", account)
+        if stop_event.is_set():
+            return
+        result = run_browser_session(
             account,
-            BROWSER_SESSION_MAX_ATTEMPTS,
+            password,
+            start_time,
+            end_time,
+            stop_event,
+            schedule=None,
+            session_deadline=None,
+            wait_for_fire=False,
+            session_index=1,
+            slot_index=slot_index,
+            slot_total=slot_total,
         )
+        logger.info("🛑 [%s] 抢座任务结束（结果: %s）。", account, result)
         return
 
     except Exception as e:
@@ -722,10 +821,12 @@ def main(stop_event: threading.Event = None):
         stop_event = threading.Event()
 
     try:
-        for account, info in USERS.items():
+        slot_total = len(USERS)
+        for slot_index, (account, info) in enumerate(USERS.items()):
             t = threading.Thread(
                 target=thread_task,
                 args=(account, info["password"], info["time"], stop_event, state),
+                kwargs={"slot_index": slot_index, "slot_total": slot_total},
                 daemon=True,
             )
             threads.append(t)

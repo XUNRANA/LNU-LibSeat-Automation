@@ -3,17 +3,17 @@
 # ===================================================================
 
 USERS = {
-    "你的学号": {
-        "password": "你的密码",
-        "time": {"start": "9:00", "end": "15:00"}
-    },
+    "your_student_id": {
+        "password": "your_password",
+        "time": {"start": "13:00", "end": "14:00"}
+    }
 }
 
 TARGET_CAMPUS = "崇山校区图书馆"
 TARGET_ROOM = "三楼智慧研修空间"
-PREFER_SEATS = ["001", "002", "003", "004"]
+PREFER_SEATS = ["9"]
 
-WAIT_FOR_0630 = True
+WAIT_FOR_0630 = False
 HEADLESS = True
 BROWSER = "edge"
 DRIVER_PATH = ""

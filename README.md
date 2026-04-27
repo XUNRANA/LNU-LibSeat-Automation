@@ -14,8 +14,10 @@
 - 🖥️ **现代化图形界面** — 全新设计的 GUI，采用 Indigo 主题配色，卡片式布局，视觉清爽
 - 🧵 **多线程并发** — 多账号同时运行，分时段分工，最大化抢座成功率
 - 🎯 **精确锁定** — 指定座位号 + 时间段，按优先级依次尝试
-- 🔐 **验证码自动识别** — 登录验证码 OCR + 预约点选文字验证码自动破解（ddddocr 检测+分类双引擎）
-- ⏱️ **智能卡点** — 提前预登录与预进房，目标时刻（如 6:30:00）准时点座并立即完成验证码流程
+- 🔐 **验证码自动识别** — 登录验证码 OCR + 预约点选验证码双引擎破解（图鉴 API 优先，ddddocr 本地兜底）
+- ⏱️ **三阶段精确卡点** — `prep_at` 启动浏览器 → `pre_fire_at` 触发验证码预分析 → `fire_at` 准时提交
+- 🎯 **单会话深度尝试** — 单浏览器会话，10 个优先座位逐个尝试，每个座位最多 10 次验证码机会
+- 🎥 **浏览器全程录屏** — 自动录制抢座全过程 MP4 视频（支持 headless 模式），方便复盘
 - 📧 **邮件通知** — 抢座成功后自动发送战报至你的邮箱
 - 📸 **失败截图** — 预约失败时自动截图保存，方便事后排查
 - 🛡️ **底层防休眠与心跳守护** — 运行期间自动调用系统唤醒权限，长达10小时挂机不断网/不休眠，并附带 30 分钟心跳日志
@@ -72,7 +74,7 @@
 
 **无需安装 Python，无需任何编程知识！**
 
-1. 前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载最新版 `LNU-LibSeat-v2.6.0.zip`
+1. 前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载最新版 `LNU-LibSeat-v2.7.0.zip`
 2. 解压到任意位置
 3. 双击 `LNU-LibSeat.exe`，在 GUI 界面中填写学号、密码、座位号等（GUI 会自动保存到本地 `config.py`）
 4. 点击「开始抢座」，完事！
@@ -96,7 +98,7 @@ run.bat
 
 打开软件后，你需要正确填写以下信息才能顺利抢座：
 
-- 🎯 **目标配置**：选好你想去的校区和自习室，并填上一到四个你最心仪的座位号。
+- 🎯 **目标配置**：选好你想去的校区和自习室，并填上最多十个你最心仪的座位号（按优先级排列）。
 - 👤 **账号时间**：填写你的学号和密码（注意：如果没有修改过，初始密码为 `000000`）。
 
 > ⚠️ **重中之重**：抢座的 "左区间（开始时间）" 你可以填"现在"或者整点（如：`9:00`），但抢座的 **"右区间（结束时间）"必须填整点**，比如 `15:00`，否则学校系统是不认的！
@@ -116,14 +118,16 @@ run.bat
 ```
 LNU-LibSeat-Automation/
 ├── gui.py                   # 🖥️ GUI 入口（CustomTkinter 现代卡片式界面，Indigo 主题）
-├── main.py                  # 程序核心：多线程调度器与休眠引擎
+├── main.py                  # 程序核心：多线程调度器、单会话策略引擎
 ├── config.py                # ⚙️ 配置文件（由 GUI 自动生成，也可手动编辑）
 ├── run.bat                  # 一键启动脚本
 ├── build.py                 # 📦 PyInstaller 打包脚本
 ├── _runtime_hook.py         # PyInstaller 运行时钩子
 ├── core/                    # 🛠️ 基础设施层
 │   ├── driver.py            #   WebDriver 创建与管理
-│   ├── captcha.py           #   验证码识别（登录 OCR + 预约点选文字验证码）
+│   ├── captcha.py           #   验证码识别（登录 OCR + 预约点选文字验证码 ddddocr 本地引擎）
+│   ├── captcha_api.py       #   图鉴 (TTShiTu) 付费验证码识别 API 客户端
+│   ├── screen_recorder.py   #   浏览器全程录屏（Selenium 截图 → MP4）
 │   ├── logger.py            #   日志系统（控制台 + 文件轮转 + GUI 回调）
 │   ├── notifications.py     #   SMTP 邮件推送
 │   └── utils.py             #   时间工具
@@ -161,7 +165,7 @@ python build.py
 打包完成后 `dist/LNU-LibSeat-vX.Y.Z/` 文件夹即为完整的分发包（版本号由 `build.py` 中的 `APP_VERSION` 决定）：
 - `LNU-LibSeat.exe` — 双击运行 GUI
 - `config.py` — 配置模板（首次运行 GUI 后自动覆盖）
-- `logs/` — 运行日志和失败截图
+- `logs/` — 运行日志、失败截图和录屏视频
 
 打包脚本会自动生成 `LNU-LibSeat-vX.Y.Z.zip`，可直接上传至 GitHub Release。
 

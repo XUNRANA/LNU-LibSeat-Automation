@@ -45,6 +45,8 @@ dist/
 *.swp
 mail.txt
 *.png
+*.txt
+*jpeg
 
 # Browser profiles (Selenium user data)
 profiles/
