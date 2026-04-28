@@ -202,3 +202,17 @@ python build.py
 ## 📄 版权与许可
 
 本项目采用 MIT 许可证。
+
+---
+
+## ☕ 赞助支持
+
+> 如果这个项目对你有帮助，请考虑请作者喝杯咖啡 ☕ 你的支持是持续维护的最大动力！
+
+<p align="center">
+  <img src="Alipay.jpg" width="280" alt="支付宝赞赏">&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="Wechat Pay.png" width="280" alt="微信赞赏">
+</p>
+<p align="center">
+  <b>支付宝</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>微信支付</b>
+</p>

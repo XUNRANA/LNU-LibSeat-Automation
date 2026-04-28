@@ -44,9 +44,10 @@ dist/
 *.bak
 *.swp
 mail.txt
-*.png
 *.txt
-*jpeg
+示例/
+dataset/
+真实效果/
 
 # Browser profiles (Selenium user data)
 profiles/
