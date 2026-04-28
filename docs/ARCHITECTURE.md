@@ -85,7 +85,7 @@ main()
  └── 5. finally: stop_event.set() + join(timeout=5)
 ```
 
-### 单线程任务流程 (`thread_task`) — v2.7.0 单会话策略
+### 单线程任务流程 (`thread_task`) — v2.8.0 单会话策略
 
 ```
 thread_task(account, password, time_config, stop_event, slot_index, slot_total)
@@ -270,7 +270,7 @@ python build.py
   - `chcp 65001` + `reconfigure(utf-8)` — 修复 Windows 控制台中文显示
 - **`--exclude-module config`** — config.py 不打入 exe，保持外部可编辑
 - **`--collect-all ddddocr/onnxruntime/selenium/customtkinter/cv2/mss/numpy`** — 打包 OCR 模型、推理引擎、浏览器驱动管理、录屏依赖
-- 打包产物：`dist/LNU-LibSeat-v2.7.0/` 文件夹（~187MB ZIP）
+- 打包产物：`dist/LNU-LibSeat-v2.8.0/` 文件夹（~187MB ZIP）
 
 ---
 

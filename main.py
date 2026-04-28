@@ -32,9 +32,9 @@ FORCE_API_ALWAYS = True
 
 STRICT_NEXT_DAY_CUTOFF = dt_time(10, 0, 0)
 SYSTEM_CLOSE_TIME = dt_time(22, 0, 0)
-PREP_LEAD_SECONDS = 60  # 6:29:00 打开浏览器：fire_at 前 60s 启动并登录+进入自习室
-PRE_SUBMIT_SECONDS = 10  # 6:29:50 触发验证码并点击文字：fire_at 前 10s
-CAPTCHA_CLICK_SECONDS = 10  # 与 PRE_SUBMIT_SECONDS 同步：触发后立即开始点击文字
+PREP_LEAD_SECONDS = 30  # 6:29:30 打开浏览器：fire_at 前 30s 启动并登录+进入自习室
+PRE_SUBMIT_SECONDS = 12  # 6:29:48 触发「立即预约」弹出验证码：fire_at 前 12s
+TEXT_CLICK_LEAD_SECONDS = 1  # 6:29:59 点击验证码文字：fire_at 前 1s
 CAPTCHA_RETRIES_PER_SEAT = 10  # 每个优先座位最多给 10 次点选验证码机会
 FIRE_LEAD_MS = 30  # 抢座 RTT 补偿:提前 30ms 醒来,让 click 请求大致在 fire_at 整点到达服务端
 BROWSER_SESSION_WINDOW_MINUTES = 5
@@ -67,7 +67,7 @@ def build_strict_schedule(now=None):
     )
     prep_at = fire_at - timedelta(seconds=PREP_LEAD_SECONDS)
     pre_fire_at = fire_at - timedelta(seconds=PRE_SUBMIT_SECONDS)
-    captcha_click_at = fire_at - timedelta(seconds=CAPTCHA_CLICK_SECONDS)
+    text_click_at = fire_at - timedelta(seconds=TEXT_CLICK_LEAD_SECONDS)
     close_at = fire_at.replace(hour=SYSTEM_CLOSE_TIME.hour, minute=SYSTEM_CLOSE_TIME.minute)
 
     return {
@@ -97,14 +97,14 @@ def build_custom_schedule(target_hour, target_minute, now=None):
 
     prep_at = fire_at - timedelta(seconds=PREP_LEAD_SECONDS)
     pre_fire_at = fire_at - timedelta(seconds=PRE_SUBMIT_SECONDS)
-    captcha_click_at = fire_at - timedelta(seconds=CAPTCHA_CLICK_SECONDS)
+    text_click_at = fire_at - timedelta(seconds=TEXT_CLICK_LEAD_SECONDS)
     close_at = fire_at.replace(hour=SYSTEM_CLOSE_TIME.hour, minute=SYSTEM_CLOSE_TIME.minute)
 
     return {
         "run_date": fire_at.date(),
         "prep_at": prep_at,
         "pre_fire_at": pre_fire_at,
-        "captcha_click_at": captcha_click_at,
+        "text_click_at": text_click_at,
         "fire_at": fire_at,
         "close_at": close_at,
     }
@@ -122,7 +122,7 @@ def wait_until(target_time, account, stop_event: threading.Event, stage_name: st
             "⏩ [%s] %s目标时间已过 (%s)，立即继续。",
             account,
             stage_name,
-            target_time.strftime("%Y-%m-%d %H:%M:%S"),
+            target_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
         )
         return True
 
@@ -131,9 +131,9 @@ def wait_until(target_time, account, stop_event: threading.Event, stage_name: st
     logger.info(
         "⏳ [%s] 当前: %s -> %s: %s",
         account,
-        now.strftime("%Y-%m-%d %H:%M:%S"),
+        now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
         stage_name,
-        target_time.strftime("%Y-%m-%d %H:%M:%S"),
+        target_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
     )
 
     if wait_seconds > 0:
@@ -485,7 +485,7 @@ def run_timed_priority_attack(
                 account, priority, retry, CAPTCHA_RETRIES_PER_SEAT,
             )
 
-            # 4a) 解析 + 点击文字（pre_solve_captcha 内部已做单次的图片就绪等待）
+            # 4a) 预解析验证码：只获取坐标，不点击文字！
             solve_data = booker.pre_solve_captcha(max_retries=1)
             if solve_data.get("no_captcha"):
                 logger.info("ℹ️ [%s] 未检测到验证码弹窗，直接进入结果检查。", account)
@@ -495,29 +495,44 @@ def run_timed_priority_attack(
                 logger.warning("⚠️ [%s] 第 %d 次解析失败，刷新验证码。", account, retry)
                 booker._refresh_click_captcha()
                 continue
-            if not booker.execute_captcha_clicks(solve_data):
-                booker._refresh_click_captcha()
-                continue
 
-            # 4b) 第一个成功锁住的座位 + 第 1 次重试 + 定时模式：等到 fire_at 再点确定
+            # 4b) 三阶段精准时序（首轮定时模式）：:59 点文字 → :00 点确定
             if is_first_locked_seat and first_round_for_priority and fire_at is not None:
                 first_round_for_priority = False
-                timed_window_consumed = True  # 定时窗口已消费，后续座位走立即模式
-                # RTT 补偿:提前 FIRE_LEAD_MS 醒来,让 click 的 HTTP 请求大致在 fire_at 整点抵达服务端
-                early_fire_at = fire_at - timedelta(milliseconds=FIRE_LEAD_MS)
-                ok = wait_until(early_fire_at, account, session_stop,
-                                f"等待 {fire_at.strftime('%H:%M:%S')} 提交确定 (提前 {FIRE_LEAD_MS}ms)")
+                timed_window_consumed = True
+
+                # Phase 1: 等到 :59 → 极速点击验证码文字
+                text_click_at = fire_at - timedelta(seconds=TEXT_CLICK_LEAD_SECONDS)
+                ok = wait_until(text_click_at, account, session_stop,
+                                f"等待 {text_click_at.strftime('%H:%M:%S')} 点击验证码文字")
                 if not ok:
                     if stop_event.is_set():
                         return ("stopped", None)
                     return ("restart", None)
+
+                if not booker.execute_clicks_fast(solve_data):
+                    booker._refresh_click_captcha()
+                    continue
+
+                # Phase 2: 等到 :59.970 → 点击确定按钮
+                early_fire_at = fire_at - timedelta(milliseconds=FIRE_LEAD_MS)
+                ok = wait_until(early_fire_at, account, session_stop,
+                                f"等待 {fire_at.strftime('%H:%M:%S')} 点击确定 (提前 {FIRE_LEAD_MS}ms)")
+                if not ok:
+                    if stop_event.is_set():
+                        return ("stopped", None)
+                    return ("restart", None)
+
+                confirm_ok = booker.click_captcha_confirm()
             else:
                 first_round_for_priority = False
                 if is_first_locked_seat:
                     timed_window_consumed = True
+                # 非首轮 / 立即模式：⚡ 闪电模式一气呵成
+                confirm_ok = booker.fire_captcha_blitz(solve_data)
 
-            # 4c) 点击确定
-            if booker.click_captcha_confirm():
+            # 4c) 检查结果
+            if confirm_ok:
                 captcha_passed = True
                 break
             logger.warning("⚠️ [%s] 第 %d 次确认未通过，准备刷新验证码重试。", account, retry)

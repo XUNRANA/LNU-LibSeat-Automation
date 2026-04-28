@@ -43,7 +43,7 @@ def attach_gui_handler(callback):
     global _gui_handler
     _gui_handler = GUILogHandler(callback)
     _gui_handler.setLevel(logging.INFO)  # 过滤掉 DEBUG 噪音
-    _gui_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
+    _gui_handler.setFormatter(GUIPreciseFormatter("%(asctime)s %(levelname)s %(message)s"))
     logging.getLogger().addHandler(_gui_handler)
     logging.getLogger().setLevel(logging.INFO)
 
@@ -53,6 +53,22 @@ def detach_gui_handler():
     if _gui_handler:
         logging.getLogger().removeHandler(_gui_handler)
         _gui_handler = None
+
+
+class PreciseFormatter(logging.Formatter):
+    """日志时间精确到毫秒，格式: 2026-04-28 06:29:59.970"""
+    def formatTime(self, record, datefmt=None):
+        from datetime import datetime, timezone, timedelta
+        ct = datetime.fromtimestamp(record.created, tz=timezone(timedelta(hours=8)))
+        return ct.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(record.msecs):03d}"
+
+
+class GUIPreciseFormatter(logging.Formatter):
+    """GUI 日志时间精确到毫秒，格式: 06:29:59.970"""
+    def formatTime(self, record, datefmt=None):
+        from datetime import datetime, timezone, timedelta
+        ct = datetime.fromtimestamp(record.created, tz=timezone(timedelta(hours=8)))
+        return ct.strftime("%H:%M:%S.") + f"{int(record.msecs):03d}"
 
 
 def get_logger(name: str = "lnu") -> logging.Logger:
@@ -66,7 +82,7 @@ def get_logger(name: str = "lnu") -> logging.Logger:
     level = getattr(logging, _LOG_LEVEL, logging.INFO)
     logger.setLevel(level)
 
-    fmt = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    fmt = PreciseFormatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
 
     # Console handler
     if sys.stdout is not None:
