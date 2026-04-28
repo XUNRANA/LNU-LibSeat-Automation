@@ -102,3 +102,17 @@
 4. 🚫 **连续或 7 天内累计 3 次违约，系统将自动把你拉入黑名单，停权 7 天！！！**
 5. ⏰ 系统每天放座时间：**每日 6:30** 开始放位。
 6. 📊 每日最长配额：每日预约最大 3 次，每次选座时间最长跨度只能是 **6 小时**（所以你可以 9:00-15:00 和 15:00-21:00 分两次抢），每天最多只能取消 3 次。
+
+---
+
+## ☕ 赞助支持
+
+> 如果这个项目帮到了你，请考虑请作者喝杯咖啡 ☕ 你的支持是持续维护的最大动力！
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/XUNRANA/LNU-LibSeat-Automation/master/Alipay.jpg" width="280" alt="支付宝赞赏">&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/XUNRANA/LNU-LibSeat-Automation/master/Wechat Pay.png" width="280" alt="微信赞赏">
+</p>
+<p align="center">
+  <b>支付宝</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>微信支付</b>
+</p>
