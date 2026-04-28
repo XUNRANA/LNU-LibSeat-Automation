@@ -207,16 +207,10 @@ python build.py
 
 > 如果这个项目对你有帮助，请考虑请作者喝杯咖啡 ☕ 你的支持是持续维护的最大动力！
 
-<table align="center">
-  <tr>
-    <td align="center"><img src="Alipay.jpg" width="250" alt="支付宝赞赏"></td>
-    <td width="80"></td>
-    <td align="center"><img src="Wechat Pay.png" width="250" alt="微信赞赏"></td>
-  </tr>
-  <tr>
-    <td align="center"><b>支付宝</b></td>
-    <td></td>
-    <td align="center"><b>微信支付</b></td>
-  </tr>
-</table>
-
+<p align="center">
+  <img src="Alipay.jpg" width="250" alt="支付宝赞赏">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="Wechat Pay.png" width="250" alt="微信赞赏">
+</p>
+<p align="center">
+  <b>支付宝</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>微信支付</b>
+</p>
