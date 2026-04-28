@@ -335,7 +335,7 @@ class SeatBooker:
         for attempt in range(1, max_retries + 1):
             try:
                 logger.info("🔄 预分析第 %d/%d 次...", attempt, max_retries)
-                time.sleep(0.4)  # 等待图片渲染
+                time.sleep(0.15)  # 等待图片渲染（base64内嵌,无需久等）
 
                 target_bytes, bg_bytes, bg_el = self._grab_captcha_images()
                 if target_bytes is None or bg_bytes is None:
@@ -428,6 +428,85 @@ class SeatBooker:
 
         return True
 
+    def execute_clicks_fast(self, solve_data):
+        """
+        ⚡ 极速点击验证码文字：一次 ActionChain 批量完成，无额外等待。
+        专用于三阶段精准时序（:59 点文字 → :00 点确定）。
+        """
+        if not solve_data or not solve_data.get("solved"):
+            return False
+        bg_el = solve_data["bg_el"]
+        offsets = solve_data.get("click_offsets") or []
+        if not offsets:
+            return False
+        try:
+            chain = ActionChains(self.driver)
+            for ox, oy in offsets:
+                chain.move_to_element_with_offset(bg_el, ox, oy).click()
+            chain.perform()
+            logger.info("⚡ 验证码文字极速点击完成 (%d 个点)", len(offsets))
+            return True
+        except Exception as e:
+            logger.error("❌ 极速点击失败: %s", e)
+            return False
+
+    def fire_captcha_blitz(self, solve_data):
+        """
+        ⚡ 闪电模式：一次 ActionChain 批量点击所有验证码文字 + 立即 JS 点确定。
+        整个操作只有 2 次 IPC 调用（1次perform + 1次execute_script），< 50ms 完成。
+        消除了旧流程中"点完文字等几秒再点确定"导致服务器刷新验证码的致命问题。
+        """
+        if not solve_data or not solve_data.get("solved"):
+            return False
+
+        bg_el = solve_data["bg_el"]
+        offsets = solve_data.get("click_offsets") or []
+        if not offsets:
+            return False
+
+        try:
+            # 1) 一次 ActionChain 批量点击所有文字坐标（1次IPC）
+            chain = ActionChains(self.driver)
+            for ox, oy in offsets:
+                chain.move_to_element_with_offset(bg_el, ox, oy).click()
+            chain.perform()
+
+            # 2) 立即 JS 点击确定按钮（1次IPC，比 Selenium click 快 30-80ms）
+            self.driver.execute_script(
+                "var btn = document.querySelector('.captcha-modal-footer .confirm-btn');"
+                "if(btn) btn.click();"
+            )
+            logger.info("⚡ 闪电提交：%d个文字+确定 一气呵成！", len(offsets))
+
+            # 3) 检查验证码是否通过（弹窗消失）
+            try:
+                WebDriverWait(self.driver, 12).until(
+                    EC.invisibility_of_element_located(
+                        (By.CSS_SELECTOR, ".captcha-modal-container")
+                    )
+                )
+                logger.info("✅ 验证码确认通过！")
+            except TimeoutException:
+                logger.warning("⚠️ 验证码可能未通过（弹窗未消失）")
+                self._save_failure_screenshot("captcha_confirm_timeout")
+                return False
+
+            # 4) 尝试再次点击「立即预约」（部分场景需要二次确认）
+            try:
+                submit_btn = WebDriverWait(self.driver, 1).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, ".el-button.submit-btn"))
+                )
+                submit_btn.click()
+                logger.info("🚀 已再次点击「立即预约」")
+            except (TimeoutException, NoSuchElementException):
+                logger.info("🚀 预约已自动提交")
+
+            return True
+
+        except Exception as e:
+            logger.error("❌ 闪电提交失败: %s", e)
+            return False
+
     def click_captcha_confirm(self):
         """
         时序提交 - 阶段3b: 点击验证码"确定"按钮，完成预约。
@@ -449,7 +528,7 @@ class SeatBooker:
 
             # 等待验证码弹窗消失 → 验证通过
             try:
-                WebDriverWait(self.driver, 3).until(
+                WebDriverWait(self.driver, 12).until(
                     EC.invisibility_of_element_located(
                         (By.CSS_SELECTOR, ".captcha-modal-container")
                     )
@@ -567,7 +646,7 @@ class SeatBooker:
                 By.CSS_SELECTOR, ".captcha-modal-title img.refresh"
             )
             refresh_btn.click()
-            time.sleep(1)
+            time.sleep(0.3)  # base64内嵌图片,0.3s足够渲染
         except Exception:
             logger.warning("⚠️ 刷新验证码按钮点击失败")
 

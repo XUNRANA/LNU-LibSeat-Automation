@@ -61,23 +61,11 @@ class Authenticator:
                     continue
 
                 user_input.clear()
-                time.sleep(0.5)
-                # 模拟真人缓慢输入账号
-                for char in account:
-                    user_input.send_keys(char)
-                    time.sleep(0.1)
-                
-                time.sleep(1) # 账号填完等一秒
+                user_input.send_keys(account)
                 
                 pass_input = self.driver.find_element(By.CSS_SELECTOR, 'input[placeholder="请输入密码"]')
                 pass_input.clear()
-                time.sleep(0.5)
-                # 模拟真人缓慢输入密码
-                for char in password:
-                    pass_input.send_keys(char)
-                    time.sleep(0.1)
-                
-                time.sleep(1) # 密码填完等一秒
+                pass_input.send_keys(password)
                 
                 logger.info("📝 [%s] 账号密码已填，正在等验证码...", account)
 
@@ -121,21 +109,14 @@ class Authenticator:
 
                 captcha_input = self.driver.find_element(By.CSS_SELECTOR, 'input[placeholder="请输入验证码"]')
                 captcha_input.clear()
-                time.sleep(0.5)
-                # 模拟真人输入验证码
-                for char in code:
-                    captcha_input.send_keys(char)
-                    time.sleep(0.1)
-                
-                time.sleep(1) # 验证码填完等一秒
+                captcha_input.send_keys(code)
 
                 # 3. 提交登录 (恢复为原来的强制点击按钮)
                 logger.info("🚀 [%s] 点击登录按钮！", account)
                 btn = self.driver.find_element(By.XPATH, "//button[contains(@class, 'login-btn')]")
                 self.driver.execute_script("arguments[0].click();", btn)
 
-                # 4. 检查结果 — 先等一小段时间让页面响应
-                time.sleep(2)
+                # 4. 检查结果 — 让 WebDriverWait 处理跳转等待
 
                 # 4a. 检测是否已成功跳转
                 try:
