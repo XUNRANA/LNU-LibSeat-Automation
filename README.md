@@ -159,7 +159,13 @@ MIT License
 
 ---
 
-## ☕ 赞助支持
+## ☕ 赞助支持（求赞助！！！）
+
+> ⚠️ **图鉴 API 按次计费：0.016 元/次**，每次识别无论成败都会扣费。高峰期每个账号可能消耗数十次调用，全靠作者自掏腰包维持。
+>
+> 如果使用人数持续增长，资金紧张的话，**免费 API 可能随时停止**，届时每个人需要用**自己的图鉴账号购买积分**才能继续使用。
+>
+> 如果这个项目帮到了你，**求赞助支持** ☕ 你的每一分钱都直接用于 API 调用费用，让这个项目能持续免费运行下去！
 
 <p align="center">
   <img src="Alipay.jpg" width="250" alt="支付宝">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
