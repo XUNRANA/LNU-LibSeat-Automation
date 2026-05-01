@@ -502,12 +502,16 @@ def run_browser_session(
     try:
         logger.info("🌐 [%s] 浏览器会话启动。", account)
 
-        # 创建本次会话专属文件夹
+        # 创建本次会话专属文件夹，记录日志起始位置（只导出本次会话的日志）
         import os as _os2
         _session_ts = utils.get_beijing_time().strftime('%Y%m%d_%H%M%S')
         _session_dir = _os2.path.join(_cfg('LOG_DIR', 'logs'), 'sessions', f'{_session_ts}_{account}')
+        _session_log_start = 0
         try:
             _os2.makedirs(_session_dir, exist_ok=True)
+            _log_path = _os2.path.join(_cfg('LOG_DIR', 'logs'), f'lnu_seat_{account}.log')
+            if _os2.path.exists(_log_path):
+                _session_log_start = _os2.path.getsize(_log_path)
         except Exception:
             _session_dir = None
 
@@ -611,13 +615,18 @@ def run_browser_session(
                 recorder.stop()
             except Exception:
                 pass
-        # 把本次会话的账号日志复制到会话文件夹
-        if _session_dir:
+        # 仅导出本次会话的日志到会话文件夹（从记录位置到末尾）
+        if _session_dir and _session_log_start >= 0:
             try:
-                import shutil, os as _os3
+                import os as _os3
                 log_src = _os3.path.join(_cfg('LOG_DIR', 'logs'), f'lnu_seat_{account}.log')
                 if _os3.path.exists(log_src):
-                    shutil.copy2(log_src, _os3.path.join(_session_dir, 'session.log'))
+                    with open(log_src, 'r', encoding='utf-8', errors='replace') as _lf:
+                        _lf.seek(_session_log_start)
+                        _new_lines = _lf.read()
+                    if _new_lines:
+                        with open(_os3.path.join(_session_dir, 'session.log'), 'w', encoding='utf-8') as _sf:
+                            _sf.write(_new_lines)
             except Exception:
                 pass
         _close_driver_quietly(driver)
