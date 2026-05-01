@@ -30,14 +30,29 @@ class ClickCaptchaSolver:
 
     # OCR 常见混淆字（用于轻量容错）
     CHAR_ALIASES = {
-        "找": {"这"},
-        "这": {"找"},
-        "未": {"末"},
-        "末": {"未"},
-        "土": {"士"},
-        "士": {"土"},
-        "目": {"日"},
-        "日": {"目"},
+        "找": {"这"}, "这": {"找"},
+        "未": {"末", "答", "物", "展"}, "末": {"未"},
+        "土": {"士"}, "士": {"土"},
+        "目": {"日"}, "日": {"目"},
+        "似": {"以"},
+        "应": {"定", "地"},
+        "传": {"例", "停", "加", "倒"},
+        "了": {"力", "比", "子"},
+        "识": {"谍", "强", "等", "位"},
+        "带": {"鞋", "九", "帝"},
+        "件": {"代", "卫"},
+        "画": {"面", "力", "荫"},
+        "阵": {"陈"},
+        "乡": {"业", "只", "日"},
+        "飞": {"亲", "烯", "此"},
+        "等": {"该", "趣"},
+        "火": {"时", "议"},
+        "船": {"睡", "的", "骇"},
+        "在": {"啦", "左", "存"},
+        "旁": {"和", "众"},
+        "上": {"热", "拨", "茨", "离"},
+        "怎": {"解", "蟒", "袭"},
+        "劳": {"女", "处", "原", "障", "信"},
     }
 
     def __init__(self):
@@ -98,6 +113,24 @@ class ClickCaptchaSolver:
                 candidates.append(candidate)
 
         return candidates, raws
+
+    def _match_target_chars(self, target_chars, char_map):
+        """尝试按顺序匹配目标字符，成功返回坐标列表，失败返回 None"""
+        click_points = []
+        used = set()
+        for target_char in target_chars:
+            matched = False
+            for i, item in enumerate(char_map):
+                if i in used:
+                    continue
+                if any(self._chars_match(target_char, char) for char in item["chars"]):
+                    click_points.append((item["cx"], item["cy"]))
+                    used.add(i)
+                    matched = True
+                    break
+            if not matched:
+                return None
+        return click_points
 
     def _chars_match(self, target_char: str, candidate_char: str) -> bool:
         if target_char == candidate_char:
@@ -164,23 +197,19 @@ class ClickCaptchaSolver:
                 if chars:
                     char_map.append({"chars": chars, "cx": cx, "cy": cy})
 
-            # 4. 按目标文字顺序匹配坐标
-            click_points = []
-            used = set()
-
-            for target_char in target_chars:
-                matched = False
-                for i, item in enumerate(char_map):
-                    if i in used:
-                        continue
-                    if any(self._chars_match(target_char, char) for char in item["chars"]):
-                        click_points.append((item["cx"], item["cy"]))
-                        used.add(i)
-                        matched = True
+            # 4. 按目标文字顺序匹配坐标（先全字匹配，失败则逐个字符尝试）
+            click_points = self._match_target_chars(target_chars, char_map)
+            if click_points is None and len(target_chars) > 1:
+                logger.info("🔄 多字匹配失败，逐个字符尝试（过滤干扰字）...")
+                for single_char in target_chars:
+                    click_points = self._match_target_chars([single_char], char_map)
+                    if click_points:
+                        logger.info("✅ 单字 '%s' 匹配成功，忽略其他干扰字", single_char)
                         break
-                if not matched:
-                    logger.warning("⚠️ 未找到目标文字 '%s' 的匹配项", target_char)
-                    return None
+
+            if not click_points:
+                logger.warning("⚠️ 未找到目标文字 '%s' 的匹配项", "".join(target_chars))
+                return None
 
             logger.info("✅ 点选验证码求解完成: %s", click_points)
             return click_points

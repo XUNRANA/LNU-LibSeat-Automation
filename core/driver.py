@@ -48,10 +48,6 @@ def _build_options(browser: str):
         # older selenium/option implementations may not support experimental options
         pass
 
-    if _cfg('HEADLESS', True):
-        # selenium 4 new headless flag for Chromium-based browsers
-        opts.add_argument('--headless=new')
-
     return opts
 
 

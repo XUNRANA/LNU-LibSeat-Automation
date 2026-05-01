@@ -44,7 +44,7 @@ dist/
 *.bak
 *.swp
 mail.txt
-*.txt
+
 示例/
 dataset/
 真实效果/

@@ -2,7 +2,7 @@
 浏览器窗口录屏(走 Selenium 内置 screenshot,无关桌面是否可见)。
 
 每次 run_browser_session() 启动浏览器后立刻开始录,关闭浏览器前停止并写盘。
-- 通过 driver.get_screenshot_as_png() 拿到浏览器内部渲染的画面(headless 也能拿)
+- 通过 driver.get_screenshot_as_png() 拿到浏览器内部渲染的画面
 - 用 OpenCV 写 MP4
 输出: logs/recordings/session_<account>_<YYYYMMDD_HHMMSS>.mp4
 """
@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 
 
 class BrowserScreencastRecorder:
-    """通过 driver.get_screenshot_as_png() 录浏览器窗口,支持 headless。"""
+    """通过 driver.get_screenshot_as_png() 录浏览器窗口。"""
 
     def __init__(self, driver, account: str, log_dir: str = "logs", fps: int = 5):
         self.driver = driver
@@ -94,10 +94,7 @@ class BrowserScreencastRecorder:
             target=self._loop, daemon=True, name=f"recorder-{self.account}"
         )
         self._thread.start()
-        logger.info(
-            "🎥 [%s] 录屏开始: %s (%dx%d @ %dfps,浏览器内截图,支持 headless)",
-            self.account, self._filepath, w, h, self.fps,
-        )
+        logger.info("🎥 [%s] 录屏: %s (%dx%d@%dfps)", self.account, os.path.relpath(self._filepath), w, h, self.fps)
 
     # ------------------------------------------------------------------
     def _loop(self):
@@ -139,7 +136,7 @@ class BrowserScreencastRecorder:
                 pass
             self._writer = None
         if self._filepath:
-            logger.info("🎬 [%s] 录屏已保存: %s", self.account, self._filepath)
+            logger.info("🎬 [%s] 录屏: %s", self.account, os.path.relpath(self._filepath))
         self._started = False
 
 

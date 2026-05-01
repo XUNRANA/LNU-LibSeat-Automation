@@ -27,7 +27,7 @@ import venv
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APP_NAME = "LNU-LibSeat"
-APP_VERSION = "v2.7.0"  # 每次发布新版本请修改此处
+APP_VERSION = "v3.0.0"  # 每次发布新版本请修改此处
 DIST_NAME = f"{APP_NAME}-{APP_VERSION}"
 DIST_DIR = os.path.join(ROOT, "dist", DIST_NAME)
 VENV_DIR = os.path.join(ROOT, ".build_venv")
@@ -132,6 +132,15 @@ def build():
         shutil.copy2(src_logo, os.path.join(DIST_DIR, "logo.png"))
         print("[OK] logo.png copied to distribution folder")
 
+    # Copy info/ directory (seat index for all rooms)
+    src_info = os.path.join(ROOT, "info")
+    dst_info = os.path.join(DIST_DIR, "info")
+    if os.path.exists(src_info):
+        if os.path.exists(dst_info):
+            shutil.rmtree(dst_info)
+        shutil.copytree(src_info, dst_info)
+        print("[OK] info/ directory copied to distribution folder")
+
     # Create logs directory
     os.makedirs(os.path.join(DIST_DIR, "logs"), exist_ok=True)
     print("[OK] logs/ directory created")
@@ -154,7 +163,6 @@ TARGET_ROOM = "三楼智慧研修空间"
 PREFER_SEATS = ["001", "002", "003", "004", "005", "006", "007", "008", "009", "010"]
 
 WAIT_FOR_0630 = True
-HEADLESS = True
 BROWSER = "edge"
 DRIVER_PATH = ""
 WEBDRIVER_CACHE = ""

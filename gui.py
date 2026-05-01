@@ -165,9 +165,9 @@ class App(ctk.CTk):
         self.var_start2 = tk.StringVar(value="15:00")
         self.var_end2 = tk.StringVar(value="21:00")
 
-        self.var_headless = tk.BooleanVar(value=True)
+        self.var_use_api = tk.BooleanVar(value=False)
 
-        # 收集所有需要缩放字体的 widget
+# 收集所有需要缩放字体的 widget
         self._scalable_widgets = []  # [(widget, font_key, bold?, family_override)]
 
         self._build_ui()
@@ -508,7 +508,7 @@ class App(ctk.CTk):
         # 统一字体大小 14px
         LABEL_FONT = (FONT_FAMILY, 14)
         
-        # 第一行：模式按钮 + 静默开关
+        # 第一行：模式按钮
         row1 = ctk.CTkFrame(content, fg_color="transparent")
         row1.pack(fill=tk.X, pady=(0, 10))
         
@@ -529,15 +529,15 @@ class App(ctk.CTk):
             command=lambda: self._set_mode("scheduled")
         )
         self.btn_mode_sched.pack(side=tk.LEFT, padx=(0, 20))
-        
-        self.switch_headless = ctk.CTkSwitch(
-            row1, text="静默运行（隐藏浏览器）", variable=self.var_headless,
+
+        self.switch_use_api = ctk.CTkSwitch(
+            row1, text="图鉴API抢座", variable=self.var_use_api,
             font=LABEL_FONT, text_color=C["text"],
             progress_color=C["primary"], button_color=C["card"],
             fg_color=C["input_border"], height=26
         )
-        self.switch_headless.pack(side=tk.LEFT)
-        
+        self.switch_use_api.pack(side=tk.LEFT)
+
         # 定时时间设置
         self.sched_frame = ctk.CTkFrame(content, fg_color=C["pri_light"], corner_radius=10)
         sched_inner = ctk.CTkFrame(self.sched_frame, fg_color="transparent")
@@ -606,7 +606,7 @@ class App(ctk.CTk):
         clear_btn.pack(side=tk.RIGHT)
         self._scalable_widgets.append((clear_btn, "hint", False, None))
         
-        # 日志文本区域 - 深色背景
+        # 日志文本区域 - 选项卡与深色背景
         log_container = ctk.CTkFrame(
             log_card, 
             fg_color=C["log_bg"], 
@@ -614,33 +614,52 @@ class App(ctk.CTk):
         )
         log_container.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
         
-        self.log_text = scrolledtext.ScrolledText(
+        self.log_tabs = ctk.CTkTabview(
             log_container,
-            font=(FONT_MONO, FS["log"]),
-            state=tk.DISABLED,
-            wrap=tk.WORD,
-            bg=C["log_bg"],
-            fg=C["log_fg"],
-            insertbackground=C["primary"],
-            relief="flat",
-            selectbackground=C["primary"],
-            selectforeground=C["text_white"],
-            borderwidth=0,
-            padx=16,
-            pady=12
+            fg_color="transparent",
+            segmented_button_selected_color=C["primary"],
+            segmented_button_selected_hover_color=C["pri_hov"],
+            text_color=C["text"]
         )
-        self.log_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        self.log_tabs.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
         
-        # 日志颜色标签
-        for tag, color in [
-            ("green", C["success"]), 
-            ("yellow", C["warning"]),
-            ("red", C["danger"]), 
-            ("blue", "#60a5fa"),
-            ("dim", C["text3"]),
-            ("time", C["log_time"])
-        ]:
-            self.log_text.tag_configure(tag, foreground=color)
+        tab_all = self.log_tabs.add("全部日志")
+        tab_acc1 = self.log_tabs.add("主账号")
+        tab_acc2 = self.log_tabs.add("副账号")
+        
+        def _create_log_text(parent):
+            txt = scrolledtext.ScrolledText(
+                parent,
+                font=(FONT_MONO, FS["log"]),
+                state=tk.DISABLED,
+                wrap=tk.WORD,
+                bg=C["log_bg"],
+                fg=C["log_fg"],
+                insertbackground=C["primary"],
+                relief="flat",
+                selectbackground=C["primary"],
+                selectforeground=C["text_white"],
+                borderwidth=0,
+                padx=8,
+                pady=8
+            )
+            txt.pack(fill=tk.BOTH, expand=True)
+            for tag, color in [
+                ("green", C["success"]), 
+                ("yellow", C["warning"]),
+                ("red", C["danger"]), 
+                ("blue", "#60a5fa"),
+                ("dim", C["text3"]),
+                ("time", C["log_time"])
+            ]:
+                txt.tag_configure(tag, foreground=color)
+            return txt
+
+        self.log_text_all = _create_log_text(tab_all)
+        self.log_text_acc1 = _create_log_text(tab_acc1)
+        self.log_text_acc2 = _create_log_text(tab_acc2)
+        
+        self.log_texts = [self.log_text_all, self.log_text_acc1, self.log_text_acc2]
         
         # 操作按钮区域
         btn_frame = ctk.CTkFrame(parent, fg_color="transparent", height=60)
@@ -704,10 +723,6 @@ class App(ctk.CTk):
         card.content = content
         return card
 
-    def _create_card(self, parent, icon, title, description):
-        """创建带描述的卡片（保留兼容）"""
-        return self._create_card_compact(parent, icon, title)
-
     def _create_combo(self, parent, var, values, command=None):
         """创建下拉框 - 统一14px字体"""
         cb = ctk.CTkComboBox(
@@ -755,7 +770,9 @@ class App(ctk.CTk):
         # 日志区域
         try:
             log_size = _scaled(FS["log"], s)
-            self.log_text.configure(font=(FONT_MONO, log_size))
+            if hasattr(self, 'log_texts'):
+                for txt in self.log_texts:
+                    txt.configure(font=(FONT_MONO, log_size))
         except Exception:
             pass
 
@@ -807,9 +824,11 @@ class App(ctk.CTk):
 
     def _clear_log(self):
         """清空日志"""
-        self.log_text.configure(state=tk.NORMAL)
-        self.log_text.delete("1.0", tk.END)
-        self.log_text.configure(state=tk.DISABLED)
+        if hasattr(self, 'log_texts'):
+            for txt in self.log_texts:
+                txt.configure(state=tk.NORMAL)
+                txt.delete("1.0", tk.END)
+                txt.configure(state=tk.DISABLED)
 
     # ────────────── Config I/O ──────────────
 
@@ -858,11 +877,10 @@ class App(ctk.CTk):
             for i, sv in enumerate(self.seat_vars):
                 sv.set(seats[i] if i < len(seats) else "")
 
-            self.var_headless.set(ns.get("HEADLESS", True))
-
             wait = ns.get("WAIT_FOR_0630", True)
             self.var_mode.set("scheduled" if wait else "now")
             self._set_mode("scheduled" if wait else "now")
+            self.var_use_api.set(ns.get("FORCE_API_ALWAYS", False))
         except Exception:
             pass
 
@@ -890,7 +908,7 @@ class App(ctk.CTk):
         cfg.TARGET_ROOM = self.var_room.get().strip()
         cfg.PREFER_SEATS = seats
         cfg.WAIT_FOR_0630 = is_sched
-        cfg.HEADLESS = self.var_headless.get()
+        cfg.FORCE_API_ALWAYS = self.var_use_api.get()
         cfg.BROWSER = "edge"
         cfg.DRIVER_PATH = ""
         cfg.WEBDRIVER_CACHE = ""
@@ -937,7 +955,7 @@ class App(ctk.CTk):
             f'TARGET_ROOM = "{esc(self.var_room.get())}"\n'
             f"PREFER_SEATS = [{seats_str}]\n\n"
             f"WAIT_FOR_0630 = {is_sched}\n"
-            f"HEADLESS = {self.var_headless.get()}\n"
+            f"FORCE_API_ALWAYS = {self.var_use_api.get()}\n"
             'BROWSER = "edge"\nDRIVER_PATH = ""\nWEBDRIVER_CACHE = ""\n\n'
             f'RECEIVER_EMAIL = "{esc(self.var_email.get())}"\n'
             'SMTP_USER = ""\nSMTP_PASS = ""\n\n'
@@ -975,15 +993,30 @@ class App(ctk.CTk):
     # ────────────── 日志 ──────────────
 
     def _log(self, text):
-        self.log_text.configure(state=tk.NORMAL)
+        if not hasattr(self, 'log_texts'): return
+        
+        targets = [self.log_text_all]
+        
+        acc1 = self.var_account1.get().strip()
+        acc2 = self.var_account2.get().strip()
+        
+        # 智能分发日志
+        if acc1 and f"[{acc1}]" in text:
+            targets.append(self.log_text_acc1)
+        if self.var_use_account2.get() and acc2 and f"[{acc2}]" in text:
+            targets.append(self.log_text_acc2)
+            
         tag = None
         if "🎉" in text or "成功" in text or "✅" in text: tag = "green"
         elif "⚠️" in text or "WARNING" in text or "😭" in text or "💔" in text: tag = "yellow"
         elif "❌" in text or "ERROR" in text or "崩溃" in text: tag = "red"
         elif "🚀" in text or "🎯" in text or "🔒" in text or "📧" in text: tag = "blue"
-        self.log_text.insert(tk.END, text, tag) if tag else self.log_text.insert(tk.END, text)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state=tk.DISABLED)
+
+        for txt in targets:
+            txt.configure(state=tk.NORMAL)
+            txt.insert(tk.END, text, tag) if tag else txt.insert(tk.END, text)
+            txt.see(tk.END)
+            txt.configure(state=tk.DISABLED)
 
     def _gui_log_callback(self, msg):
         try: self.after(0, self._log, msg)
@@ -996,9 +1029,7 @@ class App(ctk.CTk):
         self._save_config_file()
         self._inject_config()
 
-        self.log_text.configure(state=tk.NORMAL)
-        self.log_text.delete("1.0", tk.END)
-        self.log_text.configure(state=tk.DISABLED)
+        self._clear_log()
 
         n = "2 个账号" if self.var_use_account2.get() else "1 个账号"
         m = "立即执行" if self.var_mode.get() == "now" else \

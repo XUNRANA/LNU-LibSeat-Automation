@@ -3,18 +3,18 @@
 # ===================================================================
 
 USERS = {
-    "your_student_id": {
-        "password": "your_password",
-        "time": {"start": "13:00", "end": "14:00"}
-    }
+    "": {
+        "password": "",
+        "time": {"start": "9:00", "end": "15:00"}
+    },
 }
 
 TARGET_CAMPUS = "崇山校区图书馆"
 TARGET_ROOM = "三楼智慧研修空间"
-PREFER_SEATS = ["9"]
+PREFER_SEATS = []
 
 WAIT_FOR_0630 = False
-HEADLESS = True
+FORCE_API_ALWAYS = False
 BROWSER = "edge"
 DRIVER_PATH = ""
 WEBDRIVER_CACHE = ""

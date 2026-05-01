@@ -1,6 +1,5 @@
 import time
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from core.captcha import solver
@@ -13,8 +12,50 @@ class Authenticator:
     def __init__(self, driver):
         self.driver = driver
         self.wait = WebDriverWait(driver, 10)
+        self.last_failure_reason = None
 
-    def login(self, account, password, stop_event=None):
+    @staticmethod
+    def _is_maintenance_notice(text: str) -> bool:
+        msg = (text or "").strip()
+        return ("系统维护中" in msg) or ("系统维护" in msg)
+
+    @staticmethod
+    def _trigger_stop(stop_event):
+        if stop_event is None:
+            return
+        setter = getattr(stop_event, "set", None)
+        if callable(setter):
+            setter()
+            return
+        base_event = getattr(stop_event, "base_event", None)
+        base_setter = getattr(base_event, "set", None)
+        if callable(base_setter):
+            base_setter()
+
+    def _handle_maintenance(self, account, notice_text, stop_event, maintenance_mode):
+        if maintenance_mode == "defer_until_fire":
+            logger.warning(
+                "⏸️ [%s] 收到【%s】，当前为预热登录阶段，等待预约时刻再重启浏览器抢座。",
+                account,
+                notice_text,
+            )
+            self.last_failure_reason = "maintenance_defer"
+            return False
+        if maintenance_mode == "retry_later":
+            logger.warning(
+                "⏳ [%s] 收到【%s】，将在稍后重试启动浏览器。",
+                account,
+                notice_text,
+            )
+            self.last_failure_reason = "maintenance_retry_later"
+            return False
+        logger.error("🛑 [%s] 严重：收到【%s】提示，暂停所有任务！", account, notice_text)
+        self._trigger_stop(stop_event)
+        self.last_failure_reason = "maintenance_stop"
+        return False
+
+    def login(self, account, password, stop_event=None, maintenance_mode="stop"):
+        self.last_failure_reason = None
         logger.info("👤 [%s] 正在打开登录页...", account)
 
         try:
@@ -30,11 +71,8 @@ class Authenticator:
         # 检查页面是否显示"网络出错了"之类的连接异常
         try:
             page_text = self.driver.find_element(By.TAG_NAME, "body").text
-            if "系统维护" in page_text:
-                logger.error("🛑 [%s] 严重：页面显示【系统维护中】，终止所有任务！", account)
-                if stop_event:
-                    stop_event.set()
-                return False
+            if self._is_maintenance_notice(page_text):
+                return self._handle_maintenance(account, "系统维护中", stop_event, maintenance_mode)
             if "网络出错" in page_text or "请稍后再试" in page_text:
                 logger.warning("🌐 [%s] 页面显示网络异常，等待5秒后刷新...", account)
                 time.sleep(5)
@@ -46,6 +84,7 @@ class Authenticator:
         for i in range(1, 6):
             if stop_event and stop_event.is_set():
                 logger.info("🛑 [%s] 登录中止：收到停止信号", account)
+                self.last_failure_reason = "stopped"
                 return False
             logger.info("🔄 [%s] 第 %d 次尝试...", account, i)
             try:
@@ -102,7 +141,7 @@ class Authenticator:
                 logger.info("🔍 [%s] 验证码识别: %s", account, code)
 
                 if len(code) != 4:
-                    logger.warning("⚠️ 验证码长度不对(%s)，刷新...", code)
+                    logger.warning("⚠️ [%s] 验证码长度不对(%s)，刷新...", account, code)
                     img_element.click()
                     time.sleep(1)
                     continue
@@ -145,11 +184,8 @@ class Authenticator:
                         continue
 
                 if error_msg:
-                    if "系统维护" in error_msg:
-                        logger.error("🛑 [%s] 严重：收到【%s】提示，终止所有任务！", account, error_msg)
-                        if stop_event:
-                            stop_event.set()  # 触发全局停止
-                        return False
+                    if self._is_maintenance_notice(error_msg):
+                        return self._handle_maintenance(account, error_msg, stop_event, maintenance_mode)
                     
                     logger.warning("🔔 [%s] 登录失败提示: %s", account, error_msg)
                 else:
@@ -173,7 +209,10 @@ class Authenticator:
             except Exception as e:
                 logger.error("❌ [%s] 流程异常: %s", account, e)
                 if stop_event and stop_event.is_set():
+                    self.last_failure_reason = "stopped"
                     return False
                 time.sleep(1)
 
+        if self.last_failure_reason is None:
+            self.last_failure_reason = "login_failed"
         return False
