@@ -22,7 +22,6 @@ def _cfg(attr, default=None):
 logger = get_logger(__name__)
 
 # =================== 全局开关 ===================
-FORCE_API_ALWAYS = False  # True=全天图鉴API / False=仅6:30-6:35用API
 CHECK_RESERVATION = True  # True=登录后检查已预约/履约中/当天3次 / False=跳过检查
 # ================================================
 
@@ -30,7 +29,6 @@ STRICT_NEXT_DAY_CUTOFF = dt_time(10, 0, 0)
 SYSTEM_CLOSE_TIME = dt_time(22, 0, 0)
 PREP_LEAD_SECONDS = 30  # 6:29:30 打开浏览器：fire_at 前 30s 启动并登录+进入自习室
 SEAT_LOCK_LEAD_SECONDS = 6  # fire_at 前 6s 点击座位并选好时间（锁定需 3-4s，留余量保证准时）
-FIRE_LEAD_MS = 150  # 抢座 RTT 补偿:提前 150ms 醒来,让 click 请求在 59.920 左右到达浏览器，确保早于 00.000
 MAINTENANCE_RETRY_INTERVAL_SECONDS = 120  # 维护期重试间隔：每 2 分钟重启浏览器再试
 
 
@@ -193,7 +191,7 @@ def _enlarge_driver_pool(driver, pool_size: int = 10):
         logger.debug("放大连接池失败 (可忽略): %s", e)
 
 
-def _apply_window_layout(driver, account, slot_index, slot_total):
+def _apply_window_layout(driver, account):
     """浏览器窗口最大化"""
     try:
         driver.maximize_window()
@@ -203,8 +201,6 @@ def _apply_window_layout(driver, account, slot_index, slot_total):
         logger.info("🪟 [%s] 窗口 %dx%d", account, w, h)
     except Exception as e:
         logger.warning("⚠️ [%s] 最大化失败: %s", account, e)
-    except Exception as e:
-        logger.warning("⚠️ [%s] 窗口设置失败: %s", account, e)
 
 
 def _close_driver_quietly(driver):
@@ -230,7 +226,6 @@ def _notify_success(account, room, seat, start_time, end_time):
 
 
 def run_timed_priority_attack(
-    driver,
     booker,
     account,
     start_time,
@@ -347,7 +342,7 @@ def run_timed_priority_attack(
             logger.info("🔄 [%s] 座位 %s 锁定失败，换下一个座位。", account, seat)
             continue
 
-        # 2) 定时模式：第一次成功锁定时，再准点等到 fire_at 触发立即预约
+        # 2) 定时模式：第一次成功锁定时，等到 fire_at+1s 再触发立即预约
         if not fire_at_passed:
             ok = wait_until(fire_at, account, session_stop,
                             f"等待 {fire_at.strftime('%H:%M:%S')} 准点触发预约")
@@ -357,6 +352,7 @@ def run_timed_priority_attack(
                 if stop_event.is_set():
                     return ("stopped", None)
                 return ("restart", None)
+            time.sleep(1)  # 延迟 1s，确保服务器已切到放座状态
 
         # 3) 触发"立即预约" → 弹出验证码弹窗
         if not booker.fire_submit_trigger():
@@ -517,7 +513,7 @@ def run_browser_session(
 
         driver = get_driver(None)
         _enlarge_driver_pool(driver, pool_size=10)
-        _apply_window_layout(driver, account, slot_index, slot_total)
+        _apply_window_layout(driver, account)
         time.sleep(0.3)  # 等窗口最大化生效后再录屏
 
         try:
@@ -569,7 +565,7 @@ def run_browser_session(
                     return "restart"
 
             outcome, target_seat = run_timed_priority_attack(
-                driver, booker, account, start_time, end_time,
+                booker, account, start_time, end_time,
                 schedule, stop_event, stop_event, session_dir=_session_dir,
             )
             if outcome == "stopped":
@@ -593,7 +589,7 @@ def run_browser_session(
             return "restart"
 
         outcome, target_seat = run_timed_priority_attack(
-            driver, booker, account, start_time, end_time,
+            booker, account, start_time, end_time,
             None, stop_event, stop_event, session_dir=_session_dir,
         )
         if outcome == "stopped":

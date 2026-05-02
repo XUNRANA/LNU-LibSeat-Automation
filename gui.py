@@ -13,7 +13,7 @@ import threading
 import tkinter as tk
 import ctypes
 from tkinter import scrolledtext, messagebox
-from PIL import Image, ImageDraw
+from PIL import Image
 
 import customtkinter as ctk
 
