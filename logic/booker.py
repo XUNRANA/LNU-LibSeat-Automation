@@ -165,7 +165,7 @@ class SeatBooker:
         try:
             beijing_now = datetime.now(timezone(timedelta(hours=8)))
             today_str = f"{beijing_now.year}-{beijing_now.month}-{beijing_now.day}"
-            date_elements = self.driver.find_elements(By.XPATH, f"//td[contains(text(), '{today_str}')]")
+            date_elements = self.driver.find_elements(By.XPATH, f"//td[normalize-space(text())='{today_str}']")
             count = len(date_elements)
             self.log.info("📊 [%s] 当天(%s)共有 %d 条预约记录", self.account, today_str, count)
             return count
@@ -822,6 +822,7 @@ class SeatBooker:
                 EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '有效预约')]")),
                 EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '已有预约')]")),
                 EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '预约失败')]")),
+                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '黑名单')]")),
                 EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '验证码错误')]")),
                 EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '系统繁忙')]")),
                 EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '请稍后')]")),
@@ -836,6 +837,12 @@ class SeatBooker:
             if "预约成功" in result_text or "有效预约" in result_text:
                 self.close_popup()
                 return {"status": "success", "text": result_text}
+
+            # 如果检测到黑名单，直接返回特殊状态，外层停止会话
+            if "黑名单" in result_text:
+                self._save_screenshot("blacklist")
+                self.close_popup()
+                return {"status": "blacklist", "text": result_text}
 
             # 这类失败通常可刷新验证码后继续当前座位尝试
             if (

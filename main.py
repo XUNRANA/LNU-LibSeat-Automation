@@ -400,6 +400,11 @@ def run_timed_priority_attack(
                 result = booker.check_result()
                 status = result.get("status")
                 booker._save_screenshot(f"4_result_{status}")
+                
+                if status == "blacklist":
+                    logger.error("🛑 [%s] 账号已被加入黑名单！立刻停止抢座: %s", account, result.get("text", ""))
+                    return ("stopped", None)
+
                 if status == "success":
                     logger.info("🎉🎉🎉 [%s] 座位 %s 抢座成功！", account, seat)
                     return ("success", seat)
@@ -453,6 +458,11 @@ def run_timed_priority_attack(
         if captcha_passed:
             result = booker.check_result()
             booker._save_screenshot(f"4_result_{result.get('status', 'unknown')}")
+            
+            if result.get("status") == "blacklist":
+                logger.error("🛑 [%s] 账号已被加入黑名单！立刻停止抢座: %s", account, result.get("text", ""))
+                return ("stopped", None)
+
             if result.get("status") == "success":
                 logger.info("🎉🎉🎉 [%s] 座位 %s 抢座成功！", account, seat)
                 return ("success", seat)
