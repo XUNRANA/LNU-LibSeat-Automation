@@ -46,6 +46,7 @@ dist/
 *.swp
 mail.txt
 
+tests/
 示例/
 dataset/
 真实效果/
