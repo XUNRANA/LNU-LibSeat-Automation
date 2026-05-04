@@ -25,6 +25,53 @@
 
 ---
 
+## 📊 验证码识别性能（实测数据）
+
+> 以下数据来自真实高峰期抢座会话（06:30 放座，244 个座位遍历），分引擎统计。
+
+
+<table>
+  <tr>
+    <td valign="top">
+      <b>🌐 图鉴 API（商业级）100%一次过（最多尝试5次）</b><br><br>
+      <table>
+        <tr><th>指标</th><th>数值</th></tr>
+        <tr><td>识别成功率</td><td><b>100%</b> (14/14)</td></tr>
+        <tr><td>最低延迟</td><td><b>3.54s</b></td></tr>
+        <tr><td>最高延迟</td><td><b>17.82s</b></td></tr>
+        <tr><td>平均延迟</td><td><b>7.21s</b></td></tr>
+        <tr><td>中位数延迟</td><td><b>5.96s</b></td></tr>
+      </table>
+    </td>
+    <td valign="top">
+      <b>💻 本地 OCR（免费离线）</b><br><br>
+      <table>
+        <tr><th>指标</th><th>数值</th></tr>
+        <tr><td>识别成功率</td><td><b>61.2%</b> (93/152)</td></tr>
+        <tr><td>最低延迟</td><td><b>0.32s</b></td></tr>
+        <tr><td>最高延迟</td><td><b>0.65s</b></td></tr>
+        <tr><td>平均延迟</td><td><b>0.51s</b></td></tr>
+        <tr><td>中位数延迟</td><td><b>0.53s</b></td></tr>
+      </table>
+    </td>
+    <td valign="top">
+      <b>📈 本地 OCR （最多尝试10次）</b><br><br>
+      <table>
+        <tr><th>尝试次数</th><th>座位数</th><th>占比</th></tr>
+        <tr><td>1 次通过</td><td>69</td><td>65.7%</td></tr>
+        <tr><td>2 次通过</td><td>17</td><td>16.2%</td></tr>
+        <tr><td>3 次通过</td><td>14</td><td>13.3%</td></tr>
+        <tr><td>4 次通过</td><td>4</td><td>3.8%</td></tr>
+        <tr><td>5 次通过</td><td>1</td><td>1.0%</td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+> **总结**：图鉴 API 精度极高（100%）但延迟较大；本地 OCR 速度快 10 倍以上但成功率较低。系统默认在 **6:30-6:35 高峰期强制使用图鉴 API**，其他时间段默认使用本地 OCR。除非用户在 GUI 界面开启图鉴 API 开关（⚠️ 强烈建议不要开启，0.016元/次）。
+
+---
+
 ## 📸 真实效果展示
 
 ### GUI 主界面 — 定时模式（双账号分时段挂机）
@@ -125,6 +172,7 @@ LNU-LibSeat-Automation/
 | [快速上手](docs/QUICKSTART.md) | 从零开始的完整使用教程 |
 | [配置详解](docs/CONFIGURATION.md) | config.py 各字段说明 |
 | [架构文档](docs/ARCHITECTURE.md) | 架构设计、模块关系、开发者指南 |
+| [发版说明](docs/RELEASE_NOTES.md) | v3.0.0 新特性、验证码性能实测数据 |
 
 ---
 
