@@ -4,6 +4,7 @@ import time
 import random
 import base64
 import logging
+import re
 from datetime import datetime, timezone, timedelta, time as dt_time
 from io import BytesIO
 
@@ -41,6 +42,61 @@ CAPTCHA_FAST_FAIL_KEYWORDS = (
     "操作过于频繁",
     "提交失败",
 )
+BOOKING_RESULT_KEYWORDS = (
+    "预约成功",
+    "有效预约",
+    "已有预约",
+    "预约失败",
+    "黑名单",
+    "验证码错误",
+    "系统繁忙",
+    "请稍后",
+    "请重试",
+    "操作过于频繁",
+)
+BOOKING_RESULT_FEEDBACK_SELECTORS = (
+    (By.CSS_SELECTOR, ".el-message .el-message__content"),
+    (By.CLASS_NAME, "el-message__content"),
+    (By.CLASS_NAME, "el-message-box__message"),
+    (By.CSS_SELECTOR, ".el-notification__content"),
+    (By.CSS_SELECTOR, ".el-dialog__wrapper:not([style*='display: none']) .el-message-box__message"),
+    (By.CSS_SELECTOR, ".el-dialog__wrapper:not([style*='display: none']) .el-dialog__body"),
+)
+BLACKLIST_FEEDBACK_RE = re.compile(
+    r"对不起[，,]?您已被加入黑名单[，,]?"
+    r"预约权限将在\d{4}年\d{1,2}月\d{1,2}日恢复[。.!！]?"
+    r"原因[:：]7天内迟到违约[，,]超过3次[，,]加入黑名单7天"
+)
+
+
+def _is_blacklist_feedback(result_text):
+    text = re.sub(r"\s+", "", result_text or "")
+    if not text:
+        return False
+
+    return bool(BLACKLIST_FEEDBACK_RE.search(text))
+
+
+def _classify_booking_result(result_text):
+    if "预约成功" in result_text or "有效预约" in result_text:
+        return "success"
+
+    if _is_blacklist_feedback(result_text):
+        return "blacklist"
+
+    if (
+        "验证码错误" in result_text
+        or "系统繁忙" in result_text
+        or "请稍后" in result_text
+        or "请重试" in result_text
+        or "操作过于频繁" in result_text
+    ):
+        return "retry_captcha"
+
+    if "已有预约" in result_text or "预约失败" in result_text:
+        return "failed"
+
+    return "failed"
 
 
 def _should_use_api():
@@ -247,6 +303,24 @@ class SeatBooker:
         for kw in ("没有可用时间", "没有可约时间", "约满", "不可预约", "当前不可用"):
             if kw in page:
                 return kw
+        return ""
+
+    def _get_booking_result_text(self):
+        """只从真实反馈组件读取预约结果，避免公告/说明文字误判。"""
+        for by, selector in BOOKING_RESULT_FEEDBACK_SELECTORS:
+            try:
+                elements = self.driver.find_elements(by, selector)
+            except Exception:
+                continue
+            for el in reversed(elements):
+                try:
+                    if not el.is_displayed():
+                        continue
+                    msg = (el.text or "").strip()
+                except Exception:
+                    continue
+                if msg and any(keyword in msg for keyword in BOOKING_RESULT_KEYWORDS):
+                    return msg
         return ""
 
     def _wait_captcha_result(self, timeout=3.2, poll_interval=0.06):
@@ -816,42 +890,26 @@ class SeatBooker:
           - {"status":"failed", ...}
         """
         try:
-            # 抢座窗口期 3s 超时,失败弹窗一闪即逝时也能尽早决策
-            res_element = WebDriverWait(self.driver, 3).until(EC.any_of(
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '预约成功')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '有效预约')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '已有预约')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '预约失败')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '黑名单')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '验证码错误')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '系统繁忙')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '请稍后')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '请重试')]")),
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '操作过于频繁')]")),
-            ))
-
-            result_text = res_element.text
+            # 抢座窗口期 3s 超时。只监听 toast/dialog 等真实结果反馈，避免命中页面公告里的规则说明。
+            result_text = WebDriverWait(self.driver, 3, poll_frequency=0.05).until(
+                lambda _: self._get_booking_result_text() or False
+            )
             self.log.info("📝 结果反馈: %s", result_text)
+            status = _classify_booking_result(result_text)
 
             # 如果是成功提示，关闭弹窗
-            if "预约成功" in result_text or "有效预约" in result_text:
+            if status == "success":
                 self.close_popup()
                 return {"status": "success", "text": result_text}
 
             # 如果检测到黑名单，直接返回特殊状态，外层停止会话
-            if "黑名单" in result_text:
+            if status == "blacklist":
                 self._save_screenshot("blacklist")
                 self.close_popup()
                 return {"status": "blacklist", "text": result_text}
 
             # 这类失败通常可刷新验证码后继续当前座位尝试
-            if (
-                "验证码错误" in result_text
-                or "系统繁忙" in result_text
-                or "请稍后" in result_text
-                or "请重试" in result_text
-                or "操作过于频繁" in result_text
-            ):
+            if status == "retry_captcha":
                 return {
                     "status": "retry_captcha",
                     "text": result_text,
@@ -859,7 +917,7 @@ class SeatBooker:
                 }
 
             # 其它失败提示：关闭弹窗并换下一个座位
-            if "已有预约" in result_text or "预约失败" in result_text:
+            if status == "failed":
                 self._save_screenshot("booking_failed")
                 self.close_popup()
                 return {"status": "failed", "text": result_text}
