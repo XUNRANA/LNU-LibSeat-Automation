@@ -1,13 +1,14 @@
-<div align="center">
+﻿<div align="center">
 
 # 🏗️ 架构与开发文档
 
-### LNU-LibSeat v3.0.0 内部实现详解
+### LNU-LibSeat v5.0.0 内部实现详解
 
 [← 返回 README](../README.md) ·
 [快速上手](QUICKSTART.md) ·
 [配置详解](CONFIGURATION.md) ·
-[v3.0.0 升级日志](RELEASE_NOTES.md)
+[v5.0.0 升级日志](RELEASE_NOTES_V5.md) ·
+[v3→v5 升级指南](MIGRATION_V3_TO_V5.md)
 
 </div>
 
@@ -15,12 +16,32 @@
 
 ## 📑 目录
 
+- [v5.0.0 重大变化](#v500-重大变化)
 - [整体架构](#整体架构)
 - [模块依赖图](#模块依赖图)
 - [核心抢座流程（时序图）](#核心抢座流程时序图)
 - [各模块详解](#各模块详解)
 - [关键设计决策](#关键设计决策)
 - [PyInstaller 打包](#pyinstaller-打包)
+
+---
+
+## v5.0.0 重大变化
+
+> 完整变更见 [RELEASE_NOTES_V5.md](RELEASE_NOTES_V5.md)。
+
+| 重构 | 影响层 | 关键文件 |
+|------|--------|---------|
+| **PySide6 GUI 重构** | 入口层 | `gui_qt.py` + `ui_qt/` 23 模块（取代 `gui.py`） |
+| **YOLO4+Siamese 本地验证码** | 基础设施层 | `core/captcha_yolo4_siamese.py` / `captcha_click1_yolo4_siamese.py` / `yolo_onnx.py` / `checkpoints/` |
+| **模型预加载** | 入口层 | `main.py:_start_captcha_model_preload`（异步线程） |
+| **线程安全锁** | 业务逻辑层 | `logic/booker.py:_CAPTCHA_SOLVER_LOCK` / `_YOLO4_SIAMESE_PRELOADED` |
+| **配置精简** | 配置层 | 移除 `FORCE_API_ALWAYS`，新增 `MAX_ACCOUNTS=2` |
+| **反馈分类细化** | 业务逻辑层 | `_classify_booking_result()` 新增 `"stop"` 类型 |
+
+新增子文档：
+- 🧠 [验证码引擎文档](CAPTCHA_YOLO4_SIAMESE.md) — YOLO4+Siamese 技术细节
+- 🎨 [GUI 架构文档](GUI_QT_ARCHITECTURE.md) — PySide6 模块拆分
 
 ---
 
@@ -31,8 +52,8 @@
 ```mermaid
 graph TB
     subgraph 入口层
-        GUI[gui.py<br/>CustomTkinter Indigo 主题]
-        CLI[main.py<br/>多线程调度 · 心跳监控]
+        GUI[gui_qt.py + ui_qt/<br/>PySide6 模块化界面]
+        CLI[main.py<br/>多线程调度 · 模型预加载]
     end
 
     subgraph 业务逻辑层 logic/
@@ -43,8 +64,12 @@ graph TB
 
     subgraph 基础设施层 core/
         DRV[driver.py<br/>WebDriver 管理]
-        CAP[captcha.py<br/>本地 ddddocr]
-        API[captcha_api.py<br/>图鉴 TTShiTu API]
+        CAP[captcha.py<br/>ddddocr 登录验证码]
+        YOLO3[captcha_yolo4_siamese.py<br/>Click3 求解]
+        YOLO1[captcha_click1_yolo4_siamese.py<br/>Click1 求解]
+        ONNX[yolo_onnx.py<br/>ONNX 推理]
+        CKPT[checkpoints/<br/>7 个模型权重 ~210MB]
+        API[captcha_api.py<br/>图鉴 API 备份]
         REC[screen_recorder.py<br/>浏览器录屏]
         LOG[logger.py<br/>日志系统]
         NOTIF[notifications.py<br/>SMTP 邮件]
@@ -64,8 +89,12 @@ graph TB
     CLI --> NOTIF
     CLI --> CFG
     AUTH --> CAP
-    BOOK --> API
-    BOOK --> CAP
+    BOOK --> YOLO3
+    BOOK --> YOLO1
+    YOLO3 --> ONNX
+    YOLO1 --> ONNX
+    YOLO3 --> CKPT
+    YOLO1 --> CKPT
     AUTH --> LOG
     BOOK --> LOG
     NAV --> LOG
@@ -88,9 +117,13 @@ flowchart LR
     main --> book[logic/booker.py]
 
     drv --> cfg
-    auth --> capsolver[core/captcha.py]
-    book --> capapi[core/captcha_api.py]
-    book --> capsolver
+    auth --> capsolver[core/captcha.py<br/>ddddocr 登录]
+    book --> capy3[core/captcha_yolo4_siamese.py]
+    book --> capy1[core/captcha_click1_yolo4_siamese.py]
+    capy3 --> onnx[core/yolo_onnx.py]
+    capy1 --> onnx
+    capy3 --> ckpt[core/checkpoints/*.onnx]
+    capy1 --> ckpt
 ```
 
 > 📌 **依赖规则**：`logic/` 仅调用 `core/` 和 `config.py`；`main.py` 调用所有层；不允许反向依赖。
@@ -183,7 +216,6 @@ sequenceDiagram
 
 | 函数 | 作用 |
 |------|------|
-| `build_strict_schedule()` | 计算严格 6:30 模式日程（10:00 后排到次日） |
 | `build_custom_schedule()` | 自定义时刻模式日程（任意 hh:mm，过点排次日） |
 | `wait_until()` | 分段精确等待，含 30 分钟心跳 + stop_event 响应 |
 | `run_browser_session()` | 单次浏览器会话；创建会话文件夹 `logs/sessions/<ts>_<acct>/` |
@@ -196,17 +228,65 @@ sequenceDiagram
 三级回退：`config.DRIVER_PATH` → `webdriver-manager` → SeleniumManager。
 支持 Edge / Chrome 双引擎。
 
-### `core/captcha.py` — 本地验证码
+### `core/captcha.py` — 登录验证码（ddddocr）
 
 | 类 | 用途 |
 |----|------|
-| `CaptchaSolver` | 登录验证码（4 位文本），全局单例 `solver` |
-| `ClickCaptchaSolver` | 点选验证码（按提示点击文字），ddddocr 检测+分类双引擎，支持多字匹配 / 单字回退 / 易混字容错 |
+| `CaptchaSolver` | 登录页 4 位文本验证码，全局单例 `solver`（v5 中 `ClickCaptchaSolver` 已删除） |
 
-### `core/captcha_api.py` — 图鉴 API
+### `core/captcha_yolo4_siamese.py` — Click3（3 点连击）求解（v5 新增）
 
-- **`TTShiTuClient`**：拼接「提示图 + 大图」竖向拼接后上传 → 解析返回坐标 → 映射回大图坐标系
-- **单例懒加载** `get_client()`，凭据 base64 内嵌（仅在 6:30-6:35 或 `FORCE_API_ALWAYS=True` 时触发）
+- **`Yolo4SiameseSolver.solve(target_bytes, bg_bytes)`** → `Yolo4SiameseResult`
+- YOLO4 检测背景图字符位置（输入 640×640，置信度 ≥ 0.05），输出 4 个候选框
+- Siamese 网络（112×112 输入）按相似度排序 → 输出 3 个点击坐标 + 匹配度
+- 模型：`checkpoints/click3_yolo_plan_bg_char60_best.onnx` + `click3_siamese_yolo4_posw3_best.onnx`
+
+### `core/captcha_click1_yolo4_siamese.py` — Click1（单字定位）求解（v5 新增）
+
+- **`Click1Yolo4SiameseSolver.solve(target_bytes, bg_bytes)`** → `Click1SiameseResult`
+- 同 Click3 管线，但只输出 1 个最相似的点击坐标
+- 端到端准确率 **83.48%**
+- 模型：`checkpoints/click1_yolo_plan_bg_char40_best.onnx` + `click1_siamese_yolo4_best.onnx`
+
+### `core/yolo_onnx.py` — YOLO4 ONNX 推理引擎（v5 新增）
+
+- 通用 ONNX runtime 封装：letterbox 预处理 + NMS 后处理（最多 300 检测）
+- 默认参数：置信度 0.05，IoU 0.45，输入 640，填充色 114
+- 完全无 PyTorch 依赖，仅 `onnxruntime` + `numpy` + `opencv-python`
+
+### `core/checkpoints/` — 模型权重（v5 新增，~210MB）
+
+| 文件 | 类型 | 用途 |
+|------|------|------|
+| `click3_yolo_plan_bg_char60_best.onnx` | ONNX 推理 | Click3 YOLO 检测 |
+| `click3_yolo_plan_bg_char60_best.pt` | PyTorch 源 | Click3 YOLO 训练权重 |
+| `click3_siamese_yolo4_posw3_best.onnx` | ONNX 推理 | Click3 Siamese 相似度 |
+| `click3_siamese_yolo4_posw3_best.pth` | PyTorch 源 | Click3 Siamese 训练权重 |
+| `click1_yolo_plan_bg_char40_best.onnx` | ONNX 推理 | Click1 YOLO 检测 |
+| `click1_yolo_plan_bg_char40_best.pt` | PyTorch 源 | Click1 YOLO 训练权重 |
+| `click1_siamese_yolo4_best.onnx` | ONNX 推理 | Click1 Siamese 相似度 |
+
+详细技术细节见 [CAPTCHA_YOLO4_SIAMESE.md](CAPTCHA_YOLO4_SIAMESE.md)。
+
+### `core/captcha_api.py` — 图鉴 API（v5 保留备份，默认不调用）
+
+- **`TTShiTuClient`** 仍存在于代码中，但 v5 主流程已不调用
+- 如需自行重启 API 链路，参考 v3.0.0 调用方式
+- 详见 [MIGRATION_V3_TO_V5.md §FAQ](MIGRATION_V3_TO_V5.md#-faq)
+
+### `gui_qt.py` + `ui_qt/` — PySide6 GUI（v5 新增）
+
+`gui_qt.py` 仅 8 行，委托 `ui_qt.app:main()`。`ui_qt/` 23 模块拆分：
+
+| 子目录 | 文件数 | 职责 |
+|--------|--------|------|
+| `ui_qt/` 根 | 2 | `app.py`(MainWindow) + `theme.py`(全局主题) |
+| `panels/` | 2 | 左侧 ConfigPanel + 右侧 DashboardPanel |
+| `widgets/` | 11 | 倒计时环 / 日志终端 / 账号卡 / 按钮 / Logo 等 |
+| `workers/` | 1 | `booker_worker.py` 后台抢座线程 |
+| `services/` | 2 | `config_io.py` + `prevent_sleep.py` |
+
+完整拆分见 [GUI_QT_ARCHITECTURE.md](GUI_QT_ARCHITECTURE.md)。
 
 ### `core/screen_recorder.py` — 浏览器录屏
 
@@ -254,8 +334,14 @@ failed          → 已有预约 / 预约失败 → 关弹窗换下一座位
 | **`session.log` 仅含本次** | ✅ | 通过文件 offset 截取实现，避免历史日志灌水（v3.0.0 hotfix） |
 | **`stop_event` 全链路** | ✅ | Ctrl+C / GUI 停止按钮即时响应，每个 sleep / loop 都监听 |
 | **打包隔离 venv** | ✅ | `build.py` 创建临时 venv 仅装必需依赖，避免全局包被误打包 |
-| **多自习室同时扫** | 🔬 | v3.x 构想中 |
-| **失败模式智能学习** | 🔬 | v3.x 构想中 |
+| **自研 YOLO4+Siamese 替代图鉴 API** | ✅ v5 | 商业 API 0.016 元/次烧不起，本地推理离线零成本（[CAPTCHA_YOLO4_SIAMESE.md](CAPTCHA_YOLO4_SIAMESE.md)） |
+| **06:30-06:35 时间窗口** | ✅ v5 | 本地模型仅在抢座窗口启用，其他时段不消耗 CPU |
+| **模型预加载异步线程** | ✅ v5 | `main.py:31-51`，避免抢座当下冷启动 3-5s 延迟 |
+| **PySide6 替代 CustomTkinter** | ✅ v5 | Qt 原生渲染解决高分屏不一致，模块化拆分易维护 |
+| **`MAX_ACCOUNTS = 2` 并发上限** | ✅ v5 | 超过自动截断；多账号通过 `slot_index × 8s` 偏移避免争抢 |
+| **线程安全锁** | ✅ v5 | `_CAPTCHA_SOLVER_LOCK` + `_YOLO4_SIAMESE_PRELOADED` 防多账号并发推理冲突 |
+| **多自习室同时扫** | 🔬 | 后续规划 |
+| **失败模式智能学习** | 🔬 | 后续规划 |
 
 ---
 
@@ -270,11 +356,11 @@ python build.py
 ```mermaid
 flowchart LR
     A[python build.py] --> B[创建 .build_venv/]
-    B --> C[pip install BUILD_DEPS<br/>selenium · ddddocr · customtkinter ...]
-    C --> D[PyInstaller --onedir]
+    B --> C[pip install BUILD_DEPS<br/>PySide6 · selenium · onnxruntime · ddddocr ...]
+    C --> D[PyInstaller --onedir<br/>--collect-all PySide6/onnxruntime/cv2/numpy]
     D --> E[shutil.rmtree .build_venv/]
-    E --> F[重命名 dist/LNU-LibSeat<br/>→ dist/LNU-LibSeat-v3.0.0/]
-    F --> G[拷贝 logo.png + info/ + 干净 config.py 模板]
+    E --> F[重命名 dist/LNU-LibSeat<br/>→ dist/LNU-LibSeat-v5.0.0/]
+    F --> G[拷贝 logo + info/ + core/checkpoints/ + 干净 config.py]
     G --> H[shutil.make_archive .zip]
 ```
 
@@ -282,12 +368,15 @@ flowchart LR
 
 | 路径 | 说明 |
 |------|------|
-| `dist/LNU-LibSeat-v3.0.0/` | 完整可分发文件夹 |
-| `dist/LNU-LibSeat-v3.0.0/LNU-LibSeat.exe` | 双击运行的 GUI 入口 |
-| `dist/LNU-LibSeat-v3.0.0/config.py` | 干净模板（无个人数据） |
-| `dist/LNU-LibSeat-v3.0.0/info/` | 双校区 20 间自习室座位索引 |
-| `dist/LNU-LibSeat-v3.0.0/logs/` | 日志根目录（运行时填充） |
-| `dist/LNU-LibSeat-v3.0.0.zip` | 上传 GitHub Release 用 |
+| `dist/LNU-LibSeat-v5.0.0/` | 完整可分发文件夹 |
+| `dist/LNU-LibSeat-v5.0.0/LNU-LibSeat.exe` | 双击运行的 GUI 入口 |
+| `dist/LNU-LibSeat-v5.0.0/config.py` | 干净模板（无个人数据） |
+| `dist/LNU-LibSeat-v5.0.0/info/` | 双校区 21 间自习室座位索引（含新「智慧空间」） |
+| `dist/LNU-LibSeat-v5.0.0/_internal/core/checkpoints/` | YOLO4+Siamese 模型权重 (~210MB) |
+| `dist/LNU-LibSeat-v5.0.0/logs/` | 日志根目录（运行时填充） |
+| `dist/LNU-LibSeat-v5.0.0.zip` | 上传 GitHub Release 用 |
+
+> ⚠️ `build.py:28` 当前写 `APP_VERSION = "v3.x.B"`（草稿），首次打 v5 前需手动改为 `"v5.0.0"`。
 
 ### 关键 PyInstaller 参数
 
@@ -298,7 +387,7 @@ flowchart LR
 "--collect-all", "ddddocr",      # 把模型文件和原生库都打进去
 "--collect-all", "onnxruntime",
 "--collect-all", "selenium",
-"--collect-all", "customtkinter",
+"--collect-all", "PySide6",
 "--exclude-module", "config",    # 不打 config.py — 用户外部覆盖
 "--runtime-hook", "_runtime_hook.py",  # 启动时设 cwd 和 sys.path
 ```
@@ -308,6 +397,13 @@ flowchart LR
 ## 🔗 相关文档
 
 - 📘 [快速上手](QUICKSTART.md)
+- 🚀 [v3→v5 升级指南](MIGRATION_V3_TO_V5.md) — 老用户必读
 - ⚙️ [配置详解](CONFIGURATION.md)
-- 📦 [v3.0.0 升级日志](RELEASE_NOTES.md)
-- ☕ [README — 求赞助](../README.md#-求赞助--让免费持续)
+- 🧠 [验证码引擎文档](CAPTCHA_YOLO4_SIAMESE.md) — YOLO4+Siamese 技术细节
+- 🎨 [GUI 架构文档](GUI_QT_ARCHITECTURE.md) — PySide6 模块拆分
+- 📋 [反馈消息处理参考](FEEDBACK_MESSAGES.md)
+- 🔢 [数字参数](NUMERIC_PARAMETERS.md) — 所有超时/延迟/阈值清单
+- 🔀 [抢座流程图](BOOKING_FLOWCHART.md) — 11 张 Mermaid 流程图
+- 📦 [v5.0.0 升级日志](RELEASE_NOTES_V5.md)
+- 📜 [v3.0.0 历史日志](RELEASE_NOTES.md)
+- ☕ [README — 求赞助](../README.md#-求赞助--支持持续开发)

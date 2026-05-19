@@ -12,9 +12,10 @@ Pillow>=10.1.0  # Basic image processing library
 ddddocr         # OCR captcha recognition
 
 # Modern GUI framework
-customtkinter>=5.2.0
+PySide6>=6.7.0
 
 # Screen recording (records the Edge window throughout each browser session)
 mss>=9.0.1
 opencv-python>=4.8.0
 numpy>=1.24.0
+onnxruntime>=1.17.0

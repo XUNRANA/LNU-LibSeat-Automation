@@ -95,19 +95,6 @@ def register_account_log_file(account: str):
         pass
 
 
-def detach_all_account_log_files():
-    """退出时移除所有账号日志 handler，避免重复 attach。"""
-    global _account_handlers
-    root = logging.getLogger()
-    for h in list(_account_handlers.values()):
-        try:
-            root.removeHandler(h)
-            h.close()
-        except Exception:
-            pass
-    _account_handlers = {}
-
-
 class PreciseFormatter(logging.Formatter):
     """日志时间精确到毫秒，格式: 2026-04-28 06:29:59.970"""
     def formatTime(self, record, datefmt=None):

@@ -1,11 +1,19 @@
-# 抢座完整流程图
+﻿# 抢座完整流程图
+
+> 📦 适用于 **LNU-LibSeat v5.0.0**
+
+[← 返回 README](../README.md) ·
+[架构文档](ARCHITECTURE.md) ·
+[反馈消息](FEEDBACK_MESSAGES.md) ·
+[验证码引擎](CAPTCHA_YOLO4_SIAMESE.md) ·
+[v5.0.0 升级日志](RELEASE_NOTES_V5.md)
 
 本文按当前代码实现绘制，覆盖单账号从启动到结束的主要路径、异常分支、重试分支和停止条件。
+v5.0.0 关键差异：验证码识别走 [YOLO4+Siamese 本地模型](CAPTCHA_YOLO4_SIAMESE.md)，仅在 06:30:00–06:35:00 时间窗口启用；窗口外 `pre_solve_captcha` 直接返回 `outside_model_window=True`，主循环立即换座。
 
 术语说明：
 
 - `停止`：当前账号任务结束，通常不再尝试其他座位。
-- `重启结果`：`run_browser_session()` 返回 `restart`。当前 `thread_task()` 对普通 `restart` 不做循环重启，只记录结果并结束；只有系统维护分支会按规则再次启动浏览器。
 - `换座`：关闭当前弹窗后进入下一个候选座位。
 - `重试当前座位`：刷新验证码或重新锁定同一个座位后继续当前座位。
 - `真实黑名单处罚文本`：必须匹配“对不起，您已被加入黑名单，预约权限将在{任意日期}恢复。原因：7天内迟到违约，超过3次，加入黑名单7天”。其中日期可变，其它信息按固定结构判断。
@@ -20,11 +28,8 @@ flowchart TD
     D --> E["账号之间间隔 5 秒启动，降低并发请求"]
     E --> F{"定时模式 WAIT_FOR_0630?"}
 
-    F -- "是" --> G{"SCHEDULE_MODE"}
-    G -- "strict" --> G1["严格模式：10:00 前抢当天；10:00 后排次日；fire_at=06:30:00"]
-    G -- "custom" --> G2["自定义模式：fire_at=配置小时分钟；如果已过则排次日"]
-    G1 --> H["计算 prep_at=fire_at-30s / seat_lock_at=fire_at-6s / close_at=22:00"]
-    G2 --> H
+    F -- "是" --> G["fire_at=配置小时分钟；如果已过则排次日"]
+    G --> H["计算 prep_at=fire_at-30s / seat_lock_at=fire_at-6s"]
     H --> I["wait_until(prep_at)：等待准备启动浏览器"]
     I -- "等待中 stop_event" --> Z1["当前账号线程结束"]
     I -- "到时" --> J["run_browser_session(schedule, wait_for_fire=True)"]
@@ -36,13 +41,10 @@ flowchart TD
 
     L -- "success" --> Z2["记录成功，账号任务结束"]
     L -- "stopped" --> Z3["账号任务结束"]
-    L -- "restart" --> Z4["普通重启结果：当前实现记录后结束"]
     L -- "maintenance_retry_at_fire" --> M["等待 fire_at"]
     M -- "到时" --> N["重启浏览器，按立即模式抢座"]
     N --> L
-    L -- "maintenance_retry_later" --> O{"是否已到 close_at?"}
-    O -- "是" --> Z5["停止维护重试，账号任务结束"]
-    O -- "否" --> P["等待最多 120 秒后再次启动浏览器"]
+    L -- "maintenance_retry_later" --> P["等待 120 秒后再次启动浏览器"]
     P --> N
 ```
 
@@ -64,7 +66,7 @@ flowchart TD
     H -- "maintenance_defer" --> R1["返回 maintenance_retry_at_fire"]
     H -- "maintenance_retry_later" --> R2["返回 maintenance_retry_later"]
     H -- "stop_event 已触发" --> R3["返回 stopped"]
-    H -- "普通登录失败" --> R4["返回 restart"]
+    H -- "普通登录失败" --> R4["返回 stopped"]
 
     I --> J{"定时会话 wait_for_fire && schedule?"}
 
@@ -73,13 +75,13 @@ flowchart TD
     K -- "无有效预约" --> L["enter_room() 提前进入目标自习室"]
     L -- "成功" --> M["run_timed_priority_attack(schedule)"]
     L -- "失败" --> L2["立即重试 enter_room() 一次"]
-    L2 -- "仍失败" --> R5["返回 restart"]
+    L2 -- "仍失败" --> R5["返回 stopped"]
     L2 -- "成功" --> M
 
     J -- "否" --> N["立即模式：检查已有预约/当天次数"]
     N -- "已有 已预约/履约中 或 当天 >= 3 次" --> S2["返回 stopped"]
     N -- "无有效预约" --> O["enter_room() 进入目标自习室"]
-    O -- "失败" --> R6["返回 restart"]
+    O -- "失败" --> R6["返回 stopped"]
     O -- "成功" --> P["run_timed_priority_attack(schedule=None)"]
 
     M --> Q{"抢座结果"}
@@ -87,7 +89,7 @@ flowchart TD
     Q -- "success" --> T1["发送成功邮件，返回 success"]
     Q -- "stopped" --> T2["返回 stopped"]
     Q -- "all_failed" --> T3["返回 stopped"]
-    Q -- "restart" --> T4["返回 restart"]
+    Q -- "stopped" --> T4["返回 stopped"]
 
     R1 --> FIN["finally：停止录屏，导出 session.log，关闭浏览器"]
     R2 --> FIN
@@ -146,28 +148,7 @@ flowchart TD
     E -- "5 次都未成功" --> FAIL["last_failure=login_failed，返回 False"]
 ```
 
-## 4. 已有预约与当天次数检查
-
-```mermaid
-flowchart TD
-    A["has_active_reservation()"] --> B["点击 我的预约"]
-    B -- "按钮找不到" --> C["跳过检查：返回 False，继续抢座"]
-    B -- "点击成功" --> D["等待 2 秒，等待表格渲染"]
-    D --> E{"状态表头可见?"}
-    E -- "否" --> E1["再次点击 我的预约 并等待 2 秒"]
-    E -- "是" --> F["轮询 4 次查找 已预约/履约中"]
-    E1 --> F
-    F -- "找到" --> G["返回 True：停止当前账号抢座"]
-    F -- "没找到" --> H["统计当天预约记录总数"]
-    H --> I{"当天记录数 >= 3?"}
-    I -- "是" --> J["返回 True：停止当前账号抢座"]
-    I -- "否" --> K["点击 自选座位 返回选座页"]
-    K --> L["返回 False：继续抢座"]
-    A -- "检查过程异常" --> M["尝试返回 自选座位"]
-    M --> L
-```
-
-## 5. 进房流程
+## 4. 进房流程
 
 ```mermaid
 flowchart TD
@@ -183,7 +164,7 @@ flowchart TD
     H -- "否/超时/异常" --> F
 ```
 
-## 6. 座位候选列表与座位循环
+## 5. 座位候选列表与座位循环
 
 ```mermaid
 flowchart TD
@@ -196,7 +177,7 @@ flowchart TD
     F -- "是" --> G["写入 session_dir/抢座顺序.txt"]
     G --> H{"定时模式有 seat_lock_at?"}
     H -- "是" --> I["wait_until(seat_lock_at)"]
-    I -- "stop_event" --> OUT2["返回 stopped 或 restart"]
+    I -- "stop_event" --> OUT2["返回 stopped"]
     I -- "到时" --> J["进入座位循环"]
     H -- "否" --> J
 
@@ -204,13 +185,12 @@ flowchart TD
     K -- "否" --> OUT3["全部座位尝试完，返回 all_failed"]
     K -- "是" --> L["取下一个座位：先首选，后随机兜底"]
     L --> M{"session_stop 已触发?"}
-    M -- "是且全局 stop_event" --> OUT4["返回 stopped"]
-    M -- "是但非全局停止" --> OUT5["返回 restart"]
+    M -- "是" --> OUT4["返回 stopped"]
     M -- "否" --> N["select_time_and_wait() 锁座并选择起止时间"]
     N -- "失败" --> K
     N -- "成功" --> O{"fire_at 是否已经触发过?"}
     O -- "否" --> P["wait_until(fire_at)"]
-    P -- "stop_event" --> P1["关闭预约弹窗，返回 stopped 或 restart"]
+    P -- "stop_event" --> P1["关闭预约弹窗，返回 stopped"]
     P -- "到时" --> P2["额外等待 1 秒，确保服务器放座"]
     P2 --> Q["fire_submit_trigger() 点击 立即预约"]
     O -- "是" --> Q
@@ -223,7 +203,7 @@ flowchart TD
     S -- "当前座位被拒绝/验证码耗尽" --> K
 ```
 
-## 7. 单个座位锁定与时间选择
+## 6. 单个座位锁定与时间选择
 
 ```mermaid
 flowchart TD
@@ -245,14 +225,14 @@ flowchart TD
     I -- "成功" --> OK["锁座成功：返回 True"]
 ```
 
-## 8. 验证码与提交分支
+## 7. 验证码与提交分支
 
 ```mermaid
 flowchart TD
     A["进入验证码循环"] --> B["max_retries = API窗口内 5 次；否则本地 OCR 10 次"]
     B --> C{"还有验证码尝试次数?"}
     C -- "否" --> OUT1["关闭验证码和预约弹窗，换下一个座位"]
-    C -- "是" --> D["pre_solve_captcha(max_retries=1)"]
+    C -- "是" --> D["pre_solve_captcha()"]
 
     D -- "5 秒内没有验证码弹窗" --> E["captcha_passed=True，直接 check_result()"]
     D -- "未解析成功" --> D1["刷新验证码，进入下一次验证码尝试"]
@@ -283,26 +263,27 @@ flowchart TD
     M -- "failed 或 check_timeout" --> OUT2
 ```
 
-## 9. 验证码内部细节
+## 8. 验证码内部细节
 
 ```mermaid
 flowchart TD
     A["pre_solve_captcha()"] --> B["等待 .captcha-modal-container 最多 5 秒"]
     B -- "没出现" --> NOCAP["返回 no_captcha=True"]
     B -- "出现" --> C["截图 1_captcha_popup"]
-    C --> D{"是否使用图鉴 API?"}
-    D -- "FORCE_API_ALWAYS=True 或 06:30-06:35" --> E["提取目标文字图和背景图"]
-    D -- "否" --> E
+    C --> D{"当前时间在 06:30:00-06:35:00 窗口?"}
+    D -- "否" --> WIN["返回 outside_model_window=True<br/>主循环立即换座"]
+    D -- "是" --> E["提取目标文字图和背景图（base64）"]
     E -- "图片未加载" --> F["刷新验证码，本轮解析失败"]
-    E -- "图片正常" --> G{"API 可用且在 API 窗口?"}
-    G -- "是" --> H["图鉴 API 求解"]
-    H -- "成功" --> I["转换为背景元素中心偏移坐标，带 api_id"]
-    H -- "失败" --> J["回退本地 ddddocr"]
-    G -- "否" --> J
-    J -- "成功" --> K["转换为背景元素中心偏移坐标"]
-    J -- "失败" --> F
-    I --> OK["返回 solved=True"]
-    K --> OK
+    E -- "图片正常" --> G["YOLO4 检测背景图字符位置"]
+    G -- "检测数 ≠ 4" --> F
+    G -- "检测数 = 4" --> H["Siamese 相似度网络打分（112×112 输入）"]
+    H --> I{"Click1 / Click3?"}
+    I -- "Click1" --> J1["argmax 选最相似 1 个候选"]
+    I -- "Click3" --> J3["匈牙利匹配 3 个候选（≥3 匹配点）"]
+    J1 --> K["转换为背景元素中心偏移坐标"]
+    J3 -- "matched_count < 3" --> F
+    J3 -- "matched_count ≥ 3" --> K
+    K --> OK["返回 solved=True"]
 
     OK --> L["fire_captcha_blitz()"]
     L --> M["ActionChains 按偏移点击所有文字"]
@@ -323,7 +304,7 @@ flowchart TD
     M9 --> DONE["返回 True"]
 ```
 
-## 10. 预约结果分类
+## 9. 预约结果分类
 
 ```mermaid
 flowchart TD
@@ -341,10 +322,8 @@ flowchart TD
 | 出现位置 | 触发条件 | 下一步 |
 | --- | --- | --- |
 | 登录前检查 | 页面含系统维护 | 按 maintenance_mode：等 fire_at、稍后重试、或停止所有任务 |
-| 登录循环 | 5 次登录都失败 | 返回 `restart`，当前账号任务结束 |
-| 已有预约检查 | 有 `已预约` 或 `履约中` | 当前账号停止 |
-| 当天次数检查 | 当天预约记录数 `>= 3` | 当前账号停止 |
-| 进房 | 两次进入目标自习室失败 | 返回 `restart`，当前账号任务结束 |
+| 登录循环 | 5 次登录都失败 | 返回 `stopped`，当前账号任务结束 |
+| 进房 | 两次进入目标自习室失败 | 返回 `stopped`，当前账号任务结束 |
 | 锁座 | 座位不存在、不可点击、时间不可选、无预约框、已满等 | 换下一个座位 |
 | 点击立即预约 | 找不到/点不了提交按钮 | 换下一个座位 |
 | 验证码解析 | 图片未加载、API/OCR 解析失败 | 刷新验证码，继续当前座位 |
@@ -357,7 +336,7 @@ flowchart TD
 | 预约结果 | `failed` / `check_timeout` | 换下一个座位 |
 | 座位循环 | 所有首选和兜底座位都失败 | 当前账号停止 |
 
-## 11. 文件和截图产物
+## 10. 文件和截图产物
 
 ```mermaid
 flowchart TD

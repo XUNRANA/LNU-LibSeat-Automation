@@ -5,17 +5,15 @@ Packages the project into a standalone folder that runs without Python.
 
 How it works:
     1. Auto-creates a clean temporary venv (isolates from Anaconda / torch / etc.)
-    2. Installs ONLY the required packages (selenium, ddddocr, pyinstaller)
+    2. Installs ONLY the required packages
     3. Runs PyInstaller inside the clean venv
     4. Cleans up the venv after build
-
-This guarantees a fast, clean build regardless of what is installed globally.
 
 Usage:
     python build.py
 
 Output:
-    dist/LNU-LibSeat/
+    dist/LNU-LibSeat-v4.0.0/
         LNU-LibSeat.exe   <- Double-click to run (GUI)
         logs/              <- Log output (auto-created)
 """
@@ -27,15 +25,16 @@ import venv
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APP_NAME = "LNU-LibSeat"
-APP_VERSION = "v3.0.0"  # 每次发布新版本请修改此处
+APP_VERSION = "v5.0.0"  # 每次发布新版本请修改此处
 DIST_NAME = f"{APP_NAME}-{APP_VERSION}"
 DIST_DIR = os.path.join(ROOT, "dist", DIST_NAME)
 VENV_DIR = os.path.join(ROOT, ".build_venv")
 
 # Only these packages (and their dependencies) go into the exe
 BUILD_DEPS = [
-    "pyinstaller", "selenium", "ddddocr", "customtkinter",
-    "opencv-python", "numpy", "mss", "Pillow", "requests",
+    "pyinstaller", "PySide6", "selenium", "ddddocr",
+    "opencv-python", "numpy", "onnxruntime", "Pillow",
+    "requests", "webdriver-manager",
 ]
 
 
@@ -59,7 +58,7 @@ def _create_clean_venv():
     if not os.path.isfile(py):
         sys.exit(f"[ERROR] venv python not found: {py}")
 
-    print("[*] Installing build dependencies (selenium, ddddocr, pyinstaller)...")
+    print("[*] Installing build dependencies...")
     subprocess.check_call(
         [py, "-m", "pip", "install", "--upgrade", "pip"],
         stdout=subprocess.DEVNULL,
@@ -71,7 +70,7 @@ def _create_clean_venv():
 
 
 def build():
-    # --- Step 1: Clean build venv ---
+    # --- Step 1: Prepare venv ---
     _create_clean_venv()
     py = _venv_python()
 
@@ -88,6 +87,7 @@ def build():
         "--icon", os.path.join(ROOT, "logo.ico"),
         "--add-data", f"{os.path.join(ROOT, 'logo.ico')};.",
         "--add-data", f"{os.path.join(ROOT, 'logo.png')};.",
+        "--add-data", f"{os.path.join(ROOT, 'logo1.png')};.",
 
         # Runtime hook: set cwd and sys.path to exe dir before any imports
         "--runtime-hook", os.path.join(ROOT, "_runtime_hook.py"),
@@ -96,16 +96,25 @@ def build():
         "--collect-all", "ddddocr",
         "--collect-all", "onnxruntime",
         "--collect-all", "selenium",
-        "--collect-all", "customtkinter",
+        "--collect-all", "PySide6",
         "--collect-all", "cv2",
-        "--collect-all", "mss",
         "--collect-all", "numpy",
 
         # Do NOT bundle config.py — users edit the external copy
         "--exclude-module", "config",
+        # Exclude training/inference deps NOT needed at runtime
+        "--exclude-module", "torch",
+        "--exclude-module", "torchvision",
+        "--exclude-module", "timm",
+        "--exclude-module", "scipy",
+        "--exclude-module", "matplotlib",
+        "--exclude-module", "pandas",
+        "--exclude-module", "ultralytics",
+        "--exclude-module", "tensorboard",
+        "--exclude-module", "tensorflow",
 
         # Entry point: GUI
-        os.path.join(ROOT, "gui.py"),
+        os.path.join(ROOT, "gui_qt.py"),
     ]
 
     print("=" * 55)
@@ -126,11 +135,12 @@ def build():
 
     # --- Step 5: Post-build — set up distribution folder ---
 
-    # Copy logo.png to exe directory so GUI can find it directly
-    src_logo = os.path.join(ROOT, "logo.png")
-    if os.path.exists(src_logo):
-        shutil.copy2(src_logo, os.path.join(DIST_DIR, "logo.png"))
-        print("[OK] logo.png copied to distribution folder")
+    # Copy logos to exe directory so GUI can find them directly
+    for logo_name in ("logo.png", "logo1.png", "logo.ico"):
+        src_logo = os.path.join(ROOT, logo_name)
+        if os.path.exists(src_logo):
+            shutil.copy2(src_logo, os.path.join(DIST_DIR, logo_name))
+            print(f"[OK] {logo_name} copied to distribution folder")
 
     # Copy info/ directory (seat index for all rooms)
     src_info = os.path.join(ROOT, "info")
@@ -140,6 +150,15 @@ def build():
             shutil.rmtree(dst_info)
         shutil.copytree(src_info, dst_info)
         print("[OK] info/ directory copied to distribution folder")
+
+    # Copy core/checkpoints/ (ONNX models for captcha solving)
+    src_ckpts = os.path.join(ROOT, "core", "checkpoints")
+    dst_ckpts = os.path.join(DIST_DIR, "_internal", "core", "checkpoints")
+    if os.path.exists(src_ckpts):
+        if os.path.exists(dst_ckpts):
+            shutil.rmtree(dst_ckpts)
+        shutil.copytree(src_ckpts, dst_ckpts)
+        print("[OK] core/checkpoints/ copied to distribution folder")
 
     # Create logs directory
     os.makedirs(os.path.join(DIST_DIR, "logs"), exist_ok=True)
@@ -152,17 +171,19 @@ def build():
 # ===================================================================
 
 USERS = {
-    "你的学号": {
-        "password": "你的密码",
-        "time": {"start": "9:00", "end": "15:00"}
+    "": {
+        "password": "",
+        "time": {"start": "", "end": ""}
     },
 }
 
 TARGET_CAMPUS = "崇山校区图书馆"
 TARGET_ROOM = "三楼智慧研修空间"
-PREFER_SEATS = ["001", "002", "003", "004", "005", "006", "007", "008", "009", "010"]
+PREFER_SEATS = []
 
-WAIT_FOR_0630 = True
+WAIT_FOR_0630 = False
+MAX_ACCOUNTS = 2
+
 BROWSER = "edge"
 DRIVER_PATH = ""
 WEBDRIVER_CACHE = ""

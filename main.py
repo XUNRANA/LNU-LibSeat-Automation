@@ -21,51 +21,34 @@ def _cfg(attr, default=None):
 
 logger = get_logger(__name__)
 
-# =================== 全局开关 ===================
-CHECK_RESERVATION = True  # True=登录后检查已预约/履约中/当天3次 / False=跳过检查
-# ================================================
-
-STRICT_NEXT_DAY_CUTOFF = dt_time(10, 0, 0)
-SYSTEM_CLOSE_TIME = dt_time(22, 0, 0)
 PREP_LEAD_SECONDS = 30  # 6:29:30 打开浏览器：fire_at 前 30s 启动并登录+进入自习室
 SEAT_LOCK_LEAD_SECONDS = 6  # fire_at 前 6s 点击座位并选好时间（锁定需 3-4s，留余量保证准时）
 MAINTENANCE_RETRY_INTERVAL_SECONDS = 120  # 维护期重试间隔：每 2 分钟重启浏览器再试
 
+_CAPTCHA_PRELOAD_THREAD = None
 
-def build_strict_schedule(now=None):
-    """
-    严格模式日程：
-    - 10:00-24:00 启动：排到次日
-    - 其他时间启动：抢当天
-    返回 prep_at（准备时刻）和 fire_at（提交时刻），中间无空等。
-    """
-    now = now or utils.get_beijing_time()
-    current_clock = now.timetz().replace(tzinfo=None)
 
-    run_date = now.date()
-    if current_clock >= STRICT_NEXT_DAY_CUTOFF:
-        run_date = run_date + timedelta(days=1)
+def _start_captcha_model_preload(reason: str = "scheduled") -> None:
+    """Start one background warmup for the local YOLO4+Siamese captcha model."""
+    global _CAPTCHA_PRELOAD_THREAD
+    if _CAPTCHA_PRELOAD_THREAD is not None and _CAPTCHA_PRELOAD_THREAD.is_alive():
+        return
 
-    fire_at = now.replace(
-        year=run_date.year,
-        month=run_date.month,
-        day=run_date.day,
-        hour=6,
-        minute=30,
-        second=0,
-        microsecond=0,
+    def _worker():
+        try:
+            from logic.booker import preload_yolo4_siamese_model
+
+            logger.info("🧠 本地 YOLO4+Siamese 验证码模型开始预加载 (%s)...", reason)
+            preload_yolo4_siamese_model("preload")
+        except Exception as exc:
+            logger.warning("⚠️ 本地 YOLO4+Siamese 验证码模型预加载线程异常: %s", exc)
+
+    _CAPTCHA_PRELOAD_THREAD = threading.Thread(
+        target=_worker,
+        name="captcha-yolo4-siamese-preload",
+        daemon=True,
     )
-    prep_at = fire_at - timedelta(seconds=PREP_LEAD_SECONDS)
-    seat_lock_at = fire_at - timedelta(seconds=SEAT_LOCK_LEAD_SECONDS)
-    close_at = fire_at.replace(hour=SYSTEM_CLOSE_TIME.hour, minute=SYSTEM_CLOSE_TIME.minute)
-
-    return {
-        "run_date": run_date,
-        "prep_at": prep_at,
-        "seat_lock_at": seat_lock_at,
-        "fire_at": fire_at,
-        "close_at": close_at,
-    }
+    _CAPTCHA_PRELOAD_THREAD.start()
 
 
 def build_custom_schedule(target_hour, target_minute, now=None):
@@ -85,14 +68,12 @@ def build_custom_schedule(target_hour, target_minute, now=None):
 
     prep_at = fire_at - timedelta(seconds=PREP_LEAD_SECONDS)
     seat_lock_at = fire_at - timedelta(seconds=SEAT_LOCK_LEAD_SECONDS)
-    close_at = fire_at.replace(hour=SYSTEM_CLOSE_TIME.hour, minute=SYSTEM_CLOSE_TIME.minute)
 
     return {
         "run_date": fire_at.date(),
         "prep_at": prep_at,
         "seat_lock_at": seat_lock_at,
         "fire_at": fire_at,
-        "close_at": close_at,
     }
 
 
@@ -246,7 +227,7 @@ def run_timed_priority_attack(
     - 全部座位都失败 → 退出，不重启浏览器
 
     返回:
-      ("success", seat) | ("all_failed", None) | ("stopped", None) | ("restart", None)
+      ("success", seat) | ("all_failed", None) | ("stopped", None)
     """
     PREFER_SEATS = _cfg('PREFER_SEATS', []) or []
 
@@ -266,7 +247,6 @@ def run_timed_priority_attack(
         return str(int(s)) if s.isdigit() else s
 
     # 标准化后建立查找集合
-    raw_room_set = set(all_room_seats)
     norm_room_set = {_normalize_seat(s) for s in all_room_seats}
 
     # 用户首选座位：标准化后匹配，不存在则跳过
@@ -319,22 +299,26 @@ def run_timed_priority_attack(
         ok = wait_until(seat_lock_at, account, session_stop,
                         f"等待 {seat_lock_at.strftime('%H:%M:%S')} 锁定座位")
         if not ok:
-            if stop_event.is_set():
-                return ("stopped", None)
-            return ("restart", None)
+            return ("stopped", None)
 
     # fire_at 仅在"首个成功锁住"的座位上等一次，之后直接进入提交
     fire_at_passed = (fire_at is None)
 
     for idx, seat in enumerate(extended_seats, start=1):
         if session_stop.is_set():
-            return ("stopped", None) if stop_event.is_set() else ("restart", None)
+            return ("stopped", None)
 
         n_preferred = len(extended_seats) - len(fallback)
         in_fallback = idx > n_preferred
         if in_fallback and idx == n_preferred + 1:
             logger.info("🔀 [%s] === 首选耗尽，开始随机扫描 %s 剩余座位 ===", account, room_name)
         logger.info("🎯 [%s] === 抢座位 %s ===", account, seat)
+
+        # 0.5) 确保在座位图页面（预约失败后可能停留在错误页面）
+        booker.ensure_on_seat_grid()
+
+        # 0.6) 清除上一个座位残留的 toast，避免 page_source 误扫到旧的失败提示
+        booker._dismiss_stale_messages()
 
         # 1) 锁定座位（弹时间选择框 + 选时间）
         if not booker.select_time_and_wait(seat, start_time, end_time):
@@ -349,10 +333,8 @@ def run_timed_priority_attack(
             fire_at_passed = True
             if not ok:
                 booker.close_popup()
-                if stop_event.is_set():
-                    return ("stopped", None)
-                return ("restart", None)
-            time.sleep(1)  # 延迟 1s，确保服务器已切到放座状态
+                return ("stopped", None)
+            time.sleep(2)  # 延迟 2s，确保服务器已切到放座状态
 
         # 3) 触发"立即预约" → 弹出验证码弹窗
         if not booker.fire_submit_trigger():
@@ -360,19 +342,23 @@ def run_timed_priority_attack(
             booker.close_popup()
             continue
 
-        # 4) 验证码循环：API 最多 5 次，本地 OCR 最多 10 次
+        # 4) 验证码循环：本地 YOLO4+Siamese 每个座位最多 10 次
         booker.current_priority = idx
         booker.current_seat = seat
         booker.current_retry = 0
         max_retries = booker.get_captcha_max_retries()
         captcha_passed = False
         submit_rejected = False
+        booker.last_booking_result_status = ""
+        booker.last_booking_result_text = ""
 
         for retry in range(1, max_retries + 1):
             if session_stop.is_set():
-                if stop_event.is_set():
-                    return ("stopped", None)
-                return ("restart", None)
+                return ("stopped", None)
+
+            # 清除上一轮残留的 toast，避免 page_source 误扫到旧的"验证码错误"
+            if retry > 1:
+                booker._dismiss_stale_messages()
 
             booker.current_seat = seat
             booker.current_retry = retry
@@ -382,17 +368,22 @@ def run_timed_priority_attack(
             )
 
             # 4a) 获取验证码并解析
-            solve_data = booker.pre_solve_captcha(max_retries=1)
+            solve_data = booker.pre_solve_captcha()
             if solve_data.get("no_captcha"):
                 logger.info("ℹ️ [%s] 未检测到验证码弹窗，直接进入结果检查。", account)
                 captcha_passed = True
                 break
+            if solve_data.get("outside_model_window"):
+                logger.warning("⚠️ [%s] 当前不在 06:30:00-06:35:00，本地模型不接入；结束当前座位尝试。", account)
+                submit_rejected = True
+                break
             if not solve_data.get("solved"):
-                logger.warning("⚠️ [%s] 第 %d 次解析失败，刷新验证码。", account, retry)
-                booker._refresh_click_captcha()
+                logger.warning("⚠️ [%s] 第 %d 次模型返回 False，火速刷新验证码。", account, retry)
+                booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
                 continue
 
             # 4b) 直接闪电提交（不再分段等待）
+            booker.last_stop_reason = ""
             confirm_ok = booker.fire_captcha_blitz(solve_data)
 
             # 4c) 检查结果
@@ -401,6 +392,10 @@ def run_timed_priority_attack(
                 status = result.get("status")
                 booker._save_screenshot(f"4_result_{status}")
                 
+                if status == "stop":
+                    logger.error("🛑 [%s] 收到系统可预约时间限制提示，立即停止抢座: %s", account, result.get("text", ""))
+                    return ("stopped", None)
+
                 if status == "blacklist":
                     logger.error("🛑 [%s] 账号已被加入黑名单！立刻停止抢座: %s", account, result.get("text", ""))
                     return ("stopped", None)
@@ -414,9 +409,6 @@ def run_timed_priority_attack(
                         "⚠️ [%s] 第 %d 次收到可重试反馈【%s】，准备继续当前座位。",
                         account, retry, result.get("text", ""),
                     )
-                    if result.get("report_api_error"):
-                        booker._report_api_error_safe(solve_data.get("api_id"))
-                    
                     if not booker.is_captcha_popup_present():
                         logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
                         if not booker.select_time_and_wait(seat, start_time, end_time):
@@ -427,15 +419,21 @@ def run_timed_priority_attack(
                             break
                         continue
 
-                    booker._refresh_click_captcha()
+                    if booker.last_captcha_auto_refreshed:
+                        booker.last_captcha_auto_refreshed = False
+                        logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
+                    else:
+                        booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
                     continue
 
                 submit_rejected = True
                 break
             
+            if getattr(booker, "last_stop_reason", ""):
+                logger.error("🛑 [%s] 收到系统可预约时间限制提示，立即停止抢座: %s", account, booker.last_stop_reason)
+                return ("stopped", None)
+
             logger.warning("⚠️ [%s] 第 %d 次确认未通过，准备重试。", account, retry)
-            # API 识别错了 → 自动上报，5 分钟内退费
-            booker._report_api_error_safe(solve_data.get("api_id"))
             
             if not booker.is_captcha_popup_present():
                 logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
@@ -447,18 +445,27 @@ def run_timed_priority_attack(
                     break
                 continue
             
-            booker._refresh_click_captcha()
+            if booker.last_captcha_auto_refreshed:
+                booker.last_captcha_auto_refreshed = False
+                logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
+            else:
+                booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
 
         if submit_rejected:
             logger.warning("💔 [%s] 座位 %s 提交后被拒绝，换下一个座位。", account, seat)
             booker._close_captcha_modal()
             booker.close_popup()
+            booker.ensure_on_seat_grid()
             continue
 
         if captcha_passed:
             result = booker.check_result()
             booker._save_screenshot(f"4_result_{result.get('status', 'unknown')}")
             
+            if result.get("status") == "stop":
+                logger.error("🛑 [%s] 收到系统可预约时间限制提示，立即停止抢座: %s", account, result.get("text", ""))
+                return ("stopped", None)
+
             if result.get("status") == "blacklist":
                 logger.error("🛑 [%s] 账号已被加入黑名单！立刻停止抢座: %s", account, result.get("text", ""))
                 return ("stopped", None)
@@ -521,7 +528,7 @@ def run_browser_session(
         except Exception:
             _session_dir = None
 
-        driver = get_driver(None)
+        driver = get_driver()
         _enlarge_driver_pool(driver, pool_size=10)
         _apply_window_layout(driver, account)
         time.sleep(0.3)  # 等窗口最大化生效后再录屏
@@ -550,17 +557,13 @@ def run_browser_session(
             if stop_event.is_set():
                 return "stopped"
             logger.error("❌ [%s] 浏览器会话登录失败。", account)
-            return "restart"
+            return "stopped"
 
         booker = SeatBooker(driver, account=account)
         booker.session_dir = _session_dir  # 截图保存到会话文件夹
 
         if wait_for_fire and schedule:
             target_campus = _cfg('TARGET_CAMPUS')
-
-            if CHECK_RESERVATION and booker.has_active_reservation():
-                logger.info("🛑 [%s] 账号已有有效预约，直接退出当前抢座会话！", account)
-                return "stopped"
 
             if enter_room(driver, target_campus, TARGET_ROOM, account=account):
                 logger.info(
@@ -571,8 +574,8 @@ def run_browser_session(
             else:
                 logger.warning("⚠️ [%s] 预进入自习室失败，将在开抢时重试进入。", account)
                 if not enter_room(driver, target_campus, TARGET_ROOM, account=account):
-                    logger.error("❌ [%s] 二次进入自习室仍失败，重启。", account)
-                    return "restart"
+                    logger.error("❌ [%s] 二次进入自习室仍失败。", account)
+                    return "stopped"
 
             outcome, target_seat = run_timed_priority_attack(
                 booker, account, start_time, end_time,
@@ -586,17 +589,12 @@ def run_browser_session(
             if outcome == "all_failed":
                 logger.info("🛑 [%s] 全部首选座位抢座失败，程序终止当前账号任务。", account)
                 return "stopped"
-            return "restart"
-
-        # 立即模式：先检查是否已有预约 → 进入自习室 → 直接抢座
-        if CHECK_RESERVATION and booker.has_active_reservation():
-            logger.info("🛑 [%s] 账号已有有效预约，直接退出当前抢座会话！", account)
             return "stopped"
 
         target_campus = _cfg('TARGET_CAMPUS')
         if not enter_room(driver, target_campus, TARGET_ROOM, account=account):
             logger.error("❌ [%s] 进入自习室失败。", account)
-            return "restart"
+            return "stopped"
 
         outcome, target_seat = run_timed_priority_attack(
             booker, account, start_time, end_time,
@@ -612,9 +610,7 @@ def run_browser_session(
 
     except Exception as e:
         logger.exception("❌ [%s] 浏览器会话崩溃: %s", account, e)
-        if stop_event.is_set():
-            return "stopped"
-        return "restart"
+        return "stopped"
     finally:
         if recorder is not None:
             try:
@@ -652,30 +648,27 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
 
     schedule = None
     if state:
-        schedule_mode = _cfg('SCHEDULE_MODE', 'strict')
-        if schedule_mode == 'custom':
-            schedule = build_custom_schedule(
-                _cfg('SCHEDULE_HOUR', 6),
-                _cfg('SCHEDULE_MINUTE', 30),
-            )
-        else:
-            schedule = build_strict_schedule()
+        schedule = build_custom_schedule(
+            _cfg('SCHEDULE_HOUR', 6),
+            _cfg('SCHEDULE_MINUTE', 30),
+        )
 
     if schedule:
         logger.info(
-            "🗓️ [%s] 日程: %s | 准备 %s → 锁定座位 %s → 触发验证码 %s | 截止 %s",
+            "🗓️ [%s] 日程: %s | 准备 %s → 锁定座位 %s → 触发验证码 %s",
             account,
             schedule["run_date"].isoformat(),
             schedule["prep_at"].strftime("%H:%M:%S"),
             schedule["seat_lock_at"].strftime("%H:%M:%S"),
             schedule["fire_at"].strftime("%H:%M:%S"),
-            schedule["close_at"].strftime("%H:%M:%S"),
         )
         logger.info("🚀 [%s] 单浏览器会话策略：首选 + 兜底座位逐个尝试，每个座位最多 10 次验证码机会。", account)
 
     try:
         if state and schedule:
-            ok = wait_until(schedule["prep_at"], account, stop_event, "准备启动浏览器")
+            # 按 slot 偏移 prep_at，避免多个浏览器同时初始化争抢资源
+            prep_at = schedule["prep_at"] + timedelta(seconds=slot_index * 8)
+            ok = wait_until(prep_at, account, stop_event, "准备启动浏览器")
             if not ok or stop_event.is_set():
                 return
 
@@ -699,15 +692,7 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
 
             while result == "maintenance_retry_later" and not stop_event.is_set():
                 now = utils.get_beijing_time()
-                close_at = schedule["close_at"]
-                if now >= close_at:
-                    logger.warning("🛑 [%s] 已到当日截止时间 %s，停止维护重试。", account, close_at.strftime("%H:%M:%S"))
-                    result = "stopped"
-                    break
-
                 next_retry_at = now + timedelta(seconds=MAINTENANCE_RETRY_INTERVAL_SECONDS)
-                if next_retry_at > close_at:
-                    next_retry_at = close_at
 
                 ok = wait_until(next_retry_at, account, stop_event, "系统维护重试启动浏览器")
                 if not ok or stop_event.is_set():
@@ -744,6 +729,10 @@ def main(stop_event: threading.Event = None):
     主入口。支持从外部传入 stop_event 以实现优雅停止。
     """
     USERS = _cfg('USERS', {})
+    MAX_ACCOUNTS = int(_cfg('MAX_ACCOUNTS', 2))
+    if len(USERS) > MAX_ACCOUNTS:
+        logger.warning("⚠️ 当前配置了 %d 个账号，最多支持 %d 个；本次只启动前 %d 个。", len(USERS), MAX_ACCOUNTS, MAX_ACCOUNTS)
+        USERS = dict(list(USERS.items())[:MAX_ACCOUNTS])
     TARGET_ROOM = _cfg('TARGET_ROOM')
     state = _cfg('WAIT_FOR_0630', True)
 
@@ -751,8 +740,10 @@ def main(stop_event: threading.Event = None):
     logger.info("🎯 目标: %s", TARGET_ROOM)
     if state:
         logger.info("🕒 定时模式已启用，将在指定时间准时抢座。")
+        _start_captcha_model_preload("scheduled startup")
     else:
         logger.info("🕒 立即模式: 马上启动浏览器并直接执行抢座流程。")
+        _start_captcha_model_preload("immediate startup")
 
     threads = []
     if stop_event is None:
@@ -772,7 +763,7 @@ def main(stop_event: threading.Event = None):
             )
             threads.append(t)
             t.start()
-            time.sleep(5)  # 错开 5 秒启动，避免并发请求触发反爬
+            # 不在主线程 sleep——每个线程各自等待自己的 prep_at（按 slot 偏移），避免浏览器并发初始化争抢资源
 
         # 主线程阻塞等待，支持 Ctrl+C 优雅退出
         while any(t.is_alive() for t in threads):

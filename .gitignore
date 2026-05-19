@@ -50,6 +50,9 @@ tests/
 示例/
 dataset/
 真实效果/
+runs/
+scratch/
+delete/
 
 # Browser profiles (Selenium user data)
 profiles/
@@ -60,6 +63,7 @@ profiles/
 # Temporary debug/test files
 tmp_*
 test_captcha_live.py
+test_rush_booking.py
 
 # Editor / AI tools
 .omc/

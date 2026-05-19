@@ -124,9 +124,9 @@ class Authenticator:
                             break  # 找到了！跳出等待
                         else:
                             # 可能是空的，或者是 loading 图，等待一下
-                            time.sleep(0.5)
+                            time.sleep(0.3)
                     except Exception:
-                        time.sleep(0.5)
+                        time.sleep(0.3)
 
                 if not captcha_base64:
                     logger.warning("⚠️ [%s] 验证码图片加载失败 (src为空)，点击刷新一下...", account)
@@ -191,13 +191,16 @@ class Authenticator:
                 else:
                     logger.warning("⚠️ [%s] 点击后无反应，可能验证码错了", account)
 
-                # 4c. 刷新验证码：点击验证码图片使其重新生成
-                try:
-                    captcha_img = self.driver.find_element(By.CSS_SELECTOR, '.captcha-wrap img')
-                    captcha_img.click()
-                    time.sleep(1)
-                except Exception:
-                    pass
+                # 4c. 刷新验证码："验证码错误"时系统已自动刷新，无需手动点击
+                if error_msg and "验证码错误" in error_msg:
+                    logger.info("🔄 [%s] 系统已自动刷新验证码", account)
+                else:
+                    try:
+                        captcha_img = self.driver.find_element(By.CSS_SELECTOR, '.captcha-wrap img')
+                        captcha_img.click()
+                        time.sleep(1)
+                    except Exception:
+                        pass
 
                 # 清空验证码输入框，为下次重试做准备
                 try:

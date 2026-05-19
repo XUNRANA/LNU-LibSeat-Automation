@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # 📦 LNU-LibSeat **v3.0.0**
 

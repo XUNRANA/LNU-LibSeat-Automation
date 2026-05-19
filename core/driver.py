@@ -110,6 +110,19 @@ def _validate_executable(path: str) -> bool:
     return os.path.exists(path)
 
 
+def _cleanup_edge_lock_files():
+    """Remove stale Edge lock files from the default user data directory."""
+    user_data = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "User Data")
+    for name in ("lock", "SingletonLock", "lockfile"):
+        lock_path = os.path.join(user_data, name)
+        if os.path.exists(lock_path):
+            try:
+                os.remove(lock_path)
+                logger.info("Removed stale Edge lock file: %s", lock_path)
+            except OSError:
+                pass  # file is locked by a real Edge process, skip
+
+
 def get_driver(user_data_dir: str = None):
     """Create a configured webdriver instance for the configured browser.
 
@@ -120,6 +133,9 @@ def get_driver(user_data_dir: str = None):
 
     Raises a RuntimeError with actionable guidance if no driver is available.
     """
+    if not user_data_dir:
+        _cleanup_edge_lock_files()
+
     browser = (_cfg('BROWSER', 'edge') or 'edge').lower()
 
     opts = _build_options(browser)

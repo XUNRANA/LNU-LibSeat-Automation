@@ -41,7 +41,7 @@ echo.
 echo ===================================================
 echo   LNU-LibSeat-Automation Starting (GUI)...
 echo ===================================================
-python gui.py
+python gui_qt.py
 
 echo.
 pause

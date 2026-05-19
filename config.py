@@ -5,7 +5,7 @@
 USERS = {
     "": {
         "password": "",
-        "time": {"start": "9:00", "end": "15:00"}
+        "time": {"start": "", "end": ""}
     },
 }
 
@@ -14,7 +14,8 @@ TARGET_ROOM = "三楼智慧研修空间"
 PREFER_SEATS = []
 
 WAIT_FOR_0630 = False
-FORCE_API_ALWAYS = False
+MAX_ACCOUNTS = 2
+
 BROWSER = "edge"
 DRIVER_PATH = ""
 WEBDRIVER_CACHE = ""

@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # ⚡ 快速上手教程
 
@@ -7,7 +7,8 @@
 [← 返回 README](../README.md) ·
 [配置详解](CONFIGURATION.md) ·
 [架构文档](ARCHITECTURE.md) ·
-[v3.0.0 升级日志](RELEASE_NOTES.md)
+[v5.0.0 升级日志](RELEASE_NOTES_V5.md) ·
+[v3→v5 升级指南](MIGRATION_V3_TO_V5.md)
 
 </div>
 
@@ -47,7 +48,7 @@ flowchart TD
 
 ### Step 1️⃣ 下载
 
-前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest)，下载 `LNU-LibSeat-v3.0.0.zip`，解压到任意位置。
+前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest)，下载 `LNU-LibSeat-v5.0.0.zip`，解压到任意位置。
 
 <p align="center">
   <img src="screenshots/github_release.png" width="600" alt="GitHub Releases 页面">
@@ -75,7 +76,6 @@ GUI 打开后填表：
 | **👤 账号设置** | 学号 + 密码；初始密码 `000000`；可勾「副账号」启用第二个号分时段 |
 | **📧 邮箱** | 填你的邮箱 → 抢中后秒收战报 |
 | **⚡ 立即执行 / ⏰ 定时执行** | 立即=马上抢；定时=填 hh:mm 等到那个时刻 |
-| **🔐 图鉴 API 抢座** | 🚫 **不要打开**！见下方 FAQ Q2 |
 
 ### Step 4️⃣ 开抢
 
@@ -104,11 +104,11 @@ cd LNU-LibSeat-Automation
 # 或手动方式
 python -m venv .venv
 .\.venv\Scripts\activate
-pip install -r requirements.txt    # 如有 requirements.txt
-python gui.py
+pip install -r requirements.txt    # PySide6 + onnxruntime 等
+python gui_qt.py                    # v5 入口（v3 是 gui.py）
 ```
 
-或直接 `python gui.py`（已装好依赖时）。
+或直接 `python gui_qt.py`（已装好依赖时）。
 
 打包成 exe：
 
@@ -132,14 +132,15 @@ python build.py
 </details>
 
 <details>
-<summary><b>Q2: 验证码一直失败？要不要打开「图鉴 API 抢座」？</b></summary>
+<summary><b>Q2: 验证码用什么引擎？要不要付费 API？</b></summary>
 
-🚫 **不建议打开**。
-- 它是付费 API（**0.016 元/次**），目前由作者自掏腰包
-- 系统已在 **06:30-06:35** 高峰期**自动**启用 API
-- 其他时段本地 OCR 实测：**65.7%** 一把过 / **95.2%** 三次内通过 / **100%** 五次内通过——已足够
+✅ **v5 已切换本地 YOLO4+Siamese 模型，无需任何付费 API**。
 
-详见 [README §「关于图鉴 API 抢座」](../README.md#-关于图鉴-api-抢座开关)。
+- 模型权重内置在 exe（`core/checkpoints/`，~210MB）
+- 本地推理 < 1s，离线可用
+- Click1（单字）端到端准确率 **83.48%**
+
+⏰ **仅在 06:30:00–06:35:00 启用**：其他时段不解析验证码（节省 CPU）。错峰抢座（如 14:00 放座）用户需自行调整 `logic/booker.py:LOCAL_CAPTCHA_WINDOW_*`，详见 [CAPTCHA_YOLO4_SIAMESE.md](CAPTCHA_YOLO4_SIAMESE.md)。
 </details>
 
 <details>
@@ -202,7 +203,20 @@ GUI 上勾「启用副账号」，填第二个学号 + 密码 + 时段。
 
 → 全天 12 小时同一座位无缝衔接（前提是抢到同一座位）。
 
-> 注意：双账号同时跑会消耗双倍 API 次数（如启用了 API），请节制。
+> 注意：v5 默认最多并发 **2 个账号**（`config.MAX_ACCOUNTS`）。双账号同时运行会启动两个浏览器实例，CPU/RAM 消耗加倍——建议设备至少 8GB RAM。
+</details>
+
+<details>
+<summary><b>Q8: 为什么 GUI 启动后日志有「模型预加载」字样？</b></summary>
+
+v5 启动时会在后台异步加载 YOLO4+Siamese 验证码模型（~3-5s），避免 6:30 第一次验证码冷启动。这是正常行为，不阻塞 GUI 操作。
+</details>
+
+<details>
+<summary><b>Q9: 模型权重在哪？我怎么知道是不是被打包进去了？</b></summary>
+
+- **EXE 用户**：在 `LNU-LibSeat-v5.0.0/_internal/core/checkpoints/` 下，应有 7 个文件（4 ONNX + 2 PT + 1 PTH，共 ~210MB）
+- **源码用户**：在仓库根目录的 `core/checkpoints/` 下；如果该目录缺失，去 [GitHub Release](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 单独下载
 </details>
 
 ---
@@ -211,7 +225,9 @@ GUI 上勾「启用副账号」，填第二个学号 + 密码 + 时段。
 
 - ⚙️ [配置详解](CONFIGURATION.md) — 想手编 `config.py`？看这里
 - 🏗️ [架构文档](ARCHITECTURE.md) — 想了解内部实现？
-- 📦 [v3.0.0 升级日志](RELEASE_NOTES.md) — 看这次更新带来什么变化
+- 📦 [v5.0.0 升级日志](RELEASE_NOTES_V5.md) — 看这次更新带来什么变化
+- 🚀 [v3→v5 升级指南](MIGRATION_V3_TO_V5.md) — 从 v3 升上来必读
+- 🧠 [验证码引擎文档](CAPTCHA_YOLO4_SIAMESE.md) — YOLO4+Siamese 技术细节
 - ☕ [README — 求赞助](../README.md#-求赞助--让免费持续) — 让免费持续下去
 
 ---
