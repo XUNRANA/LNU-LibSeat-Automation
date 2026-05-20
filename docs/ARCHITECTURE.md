@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 🏗️ 架构与开发文档
 
@@ -143,7 +143,7 @@ sequenceDiagram
     participant A as Authenticator
     participant N as enter_room
     participant B as SeatBooker
-    participant API as 图鉴 API / 本地 OCR
+    participant API as 本地 YOLO4+Siamese / ddddocr
 
     Note over T: 6:29:00 启动
     T->>W: wait_until(prep_at = 6:29:30)
@@ -168,11 +168,11 @@ sequenceDiagram
             opt 第一次成功锁座
                 T->>W: wait_until(fire_at = 6:30:00)
                 W-->>T: ✓ 时间到
-                Note over T: time.sleep(1) 等服务端切到放座状态
+                Note over T: time.sleep(2) 等服务端切到放座状态
             end
             T->>B: fire_submit_trigger()
             B-->>T: ✓ 弹出验证码
-            loop 验证码重试（API 5 次 / 本地 10 次）
+            loop 验证码重试（最多 10 次）
                 T->>B: pre_solve_captcha()
                 B->>API: OCR 识别
                 API-->>B: 点击坐标
@@ -206,7 +206,7 @@ sequenceDiagram
 | `06:29:30` | 启动浏览器 + 登录 + 进自习室 | `PREP_LEAD_SECONDS = 30` |
 | `06:29:54` | 开始锁定座位（点座位 + 选时间） | `SEAT_LOCK_LEAD_SECONDS = 6` |
 | `06:30:00` | 触发「立即预约」按钮 | `fire_at` |
-| `06:30:01` | 实际开始点击（1s 缓冲） | `time.sleep(1)` 让服务端切状态 |
+| `06:30:02` | 实际开始点击（2s 缓冲） | `time.sleep(2)` 让服务端切状态 |
 
 ---
 
@@ -300,7 +300,7 @@ sequenceDiagram
 | `select_time_and_wait()` | 选座 + 闪电失败检测 + 自动关闭遮挡弹窗；锁座 timeout 1s 实现 fail-fast |
 | `pre_solve_captcha()` | 验证码预分析（API 优先、本地兜底） |
 | `fire_captcha_blitz()` | ActionChains 点击文字 → 轮询按钮 60×0.05s → JS 兜底补点 → Selenium 点确认 |
-| `check_result()` | `EC.any_of` 多结果检测：`success` / `blacklist` / `retry_captcha` / `failed` |
+| `check_result()` | `EC.any_of` 多结果检测：`success` / `stop` / `blacklist` / `retry_captcha` / `failed` |
 | `_save_screenshot()` | 截图命名：`优先级_座位_重试_阶段_时间戳.png` |
 | `_build_solve_data()` | 像素坐标 → CSS 偏移量转换 |
 | `_report_api_error_safe()` | 错识别上报图鉴 reporterror 退费 |
@@ -309,6 +309,7 @@ sequenceDiagram
 
 ```
 success         → 邮件通知 → 退出
+stop            → 🛑 系统限制 / 每日上限 / 部分读者开放 → 立即停止会话
 blacklist       → 🛑 立即停止本次会话（不再重试，避免加重处罚）
 retry_captcha   → 验证码错误 / 系统繁忙 / 请稍后 → 刷新验证码继续
 failed          → 已有预约 / 预约失败 → 关弹窗换下一座位
@@ -322,13 +323,13 @@ failed          → 已有预约 / 预约失败 → 关弹窗换下一座位
 |------|-----|------|
 | **单浏览器会话深度尝试** | ✅ | 每会话 N 座位 × 验证码重试，避免反复重启浏览器 |
 | **全自习室兜底扫描** | ✅ | 首选耗尽 → 随机扫描剩余全部座位（v3.0.0 新增） |
-| **图鉴 API 优先 + 本地兜底** | ✅ | 高峰期商业 API 拼准确率，平时本地拼速度 |
+| **本地 YOLO4+Siamese 优先** | ✅ v5 | 06:30-06:35 窗口内本地推理，窗口外关闭验证码弹窗换座 |
 | **ActionChains + JS 双保险点击** | ✅ | Vue 异步渲染下 ActionChains 可能落空，1.5s 后 JS MouseEvent 用精确 CSS 坐标补点 |
 | **`.el-button.confirm-btn` 选择器** | ✅ | 区分点击前的灰色 div 和点击后的真实按钮（Vue 条件渲染陷阱） |
 | **会话级追溯目录** | ✅ | 独立文件夹 + 4 阶段截图 + session.log + 抢座顺序.txt + MP4 |
-| **API 5 次 / 本地 10 次差异化重试** | ✅ | API 慢且贵，重试上限低；本地快且免费，重试上限高 |
+| **本地模型 10 次重试** | ✅ v5 | 本地 YOLO4+Siamese 快且免费，每个座位最多 10 次验证码机会 |
 | **`SEAT_LOCK_LEAD_SECONDS = 6`** | ✅ | v2.x 是 2，太短：实测锁座要 3-4s，余量不够会错过触发时机 |
-| **`fire_at` 后 sleep(1s)** | ✅ | 避开服务端从「未放座」切到「已放座」的瞬态空档（v3.0.0 hotfix） |
+| **`fire_at` 后 sleep(2s)** | ✅ | 避开服务端从「未放座」切到「已放座」的瞬态空档（v3.0.0 hotfix） |
 | **黑名单立即停止** | ✅ | 命中「黑名单」提示立刻退出会话——继续重试只会加重处罚（v3.0.0 hotfix） |
 | **`normalize-space()` 日期匹配** | ✅ | 修复 `5/4` 误匹配 `5/14` 的 XPath bug（v3.0.0 hotfix） |
 | **`session.log` 仅含本次** | ✅ | 通过文件 offset 截取实现，避免历史日志灌水（v3.0.0 hotfix） |
@@ -376,7 +377,7 @@ flowchart LR
 | `dist/LNU-LibSeat-v5.0.0/logs/` | 日志根目录（运行时填充） |
 | `dist/LNU-LibSeat-v5.0.0.zip` | 上传 GitHub Release 用 |
 
-> ⚠️ `build.py:28` 当前写 `APP_VERSION = "v3.x.B"`（草稿），首次打 v5 前需手动改为 `"v5.0.0"`。
+> ⚠️ `build.py:28` 中 `APP_VERSION = "v5.0.0"`，表示当前的主版本号。
 
 ### 关键 PyInstaller 参数
 

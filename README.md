@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 <table border="0" cellpadding="0" cellspacing="0">
 <tr>
@@ -89,7 +89,7 @@
 <tr><td><b>6:30 起床</b></td><td>必须，闹钟 5 个</td><td>❌ 不用，程序定时唤醒</td></tr>
 <tr><td><b>验证码识别</b></td><td>眼花点 5 次还点不准</td><td>🧠 自研 AI <b>&lt; 1s</b> 识别</td></tr>
 <tr><td><b>抢座失败重试</b></td><td>手动刷新→重选→重做验证码</td><td>✅ 自动换座 + 自动重做</td></tr>
-<tr><td><b>不填座位号</b></td><td>不可能，必须挑一个</td><td>✅ 留空 → 自动扫整间自习室</td></tr>
+<tr><td><b>不填座位号</b></td><td>不可能，必须挑一个</td><td>⚠️ 至少填 1 个首选，程序自动兜底扫剩余全部</td></tr>
 <tr><td><b>双账号同时抢</b></td><td>物理开两个浏览器</td><td>✅ 多线程并发（最多 2 账号）</td></tr>
 <tr><td><b>整点零延迟提交</b></td><td>你最快也比 06:30:00 慢 1-3 秒</td><td>✅ 程序毫秒级精度</td></tr>
 <tr><td><b>抢中后通知</b></td><td>自己刷新页面看</td><td>📧 邮件秒达手机</td></tr>
@@ -117,7 +117,7 @@
 </td>
 <td align="center" width="333">
 <h3>③ 填表 → 开始</h3>
-<img src="docs/screenshots/gui_scheduled.png" width="280" alt="填表点开始">
+<img src="docs/screenshots/gui_main.png" width="280" alt="填表点开始">
 <p>填学号密码 + 时段<br>点「🚀 开始抢座」</p>
 </td>
 </tr>
@@ -127,8 +127,6 @@
 > ❌ **不需要** Python、命令行、环境变量、手动下驱动——所有依赖都打包进 exe 了。
 >
 > ✅ 唯一前提：Windows 10/11 + 装了 Edge 或 Chrome（任意较新版本即可）。
->
-> 📷 v5 GUI 截图陆续补齐中，当前展示为 v3 旧界面占位（功能等价）。
 
 ---
 
@@ -164,7 +162,7 @@ Click1 端到端 <b>83.48%</b> 准确率，单次 &lt; 1s。
 </td>
 <td width="333" valign="top">
 <h3>⏱️ 毫秒级精确卡点</h3>
-提前 30s 启动浏览器 → 提前 6s 锁定座位 → 整点 06:30:01 提交。<br>
+提前 30s 启动浏览器 → 提前 6s 锁定座位 → 整点 06:30:02 提交（<code>time.sleep(2)</code> 等服务端切状态）。<br>
 多账号通过 <code>slot_index × 8s</code> 偏移避免资源争抢。
 </td>
 </tr>
@@ -188,19 +186,18 @@ Click1 端到端 <b>83.48%</b> 准确率，单次 &lt; 1s。
 
 ## 🎬 实战截图秀
 
-> 📷 v5 PySide6 新界面截图陆续补齐中，以下为 v3 占位（功能完全等价）。
+### 立即执行 — 自动登录 + 验证码识别 + 选座全流程
+
+![GUI 立即执行](docs/screenshots/gui_main.png)
 
 ### 定时模式 — 双账号分时段挂机
 
-![GUI 定时模式](docs/screenshots/gui_scheduled.png)
-
-### 立即执行 — 自动登录 + 验证码识别 + 选座全流程
-
-![自动抢座进行中](docs/screenshots/gui_running.png)
-
-### 抢座成功 — 双账号同时锁定 + 邮件通知
-
-![抢座成功](docs/screenshots/gui_success.png)
+- **06:30:00 启动抢座**：
+  ![06:30:00 启动抢座](docs/screenshots/gui_scheduled_running.png)
+- **06:30:02 验证码识别与提交**：
+  ![06:30:02 验证码识别与提交](docs/screenshots/gui_scheduled_clicking.png)
+- **06:30:05 预约成功**：
+  ![预约成功](docs/screenshots/gui_scheduled_success.png)
 
 ### 手机即时收到成功通知邮件
 
@@ -469,8 +466,6 @@ python build.py
 输出：
 - `dist/LNU-LibSeat-v5.0.0/` — 可分发的完整文件夹
 - `dist/LNU-LibSeat-v5.0.0.zip` — 直接上传 GitHub Release 用
-
-> ⚠️ 当前 `build.py:28` 仍写 `APP_VERSION = "v3.x.B"`，首次打 v5 前手动改为 `"v5.0.0"`。
 </details>
 
 <details>

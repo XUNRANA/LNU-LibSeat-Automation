@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 📊 v5.0.0 性能基准报告
 
@@ -42,7 +42,7 @@
 | PySide6 | 6.7+ |
 | 测试模式 | 真实 06:30 放座环境 / 双校区 21 间自习室 |
 
-> 部分数据来自历史 v3.x.A/v3.x.B 测试（保留作 baseline），详见 [TEST_SUMMARY.md](TEST_SUMMARY.md)。
+> 部分数据来自历史 v5.0.0-alpha/beta 测试（保留作 baseline），详见 [TEST_SUMMARY.md](TEST_SUMMARY.md)。
 
 ---
 
@@ -61,7 +61,7 @@
 
 ### Click3（3 点连击）
 
-| 指标 | v3.x.A 实测 | v3.x.B 实测 | **v5 预期** |
+| 指标 | v5.0.0-alpha 实测 | v5.0.0-beta 实测 | **v5 预期** |
 |------|-------------|-------------|-------------|
 | 单次准确率（双账户） | 56.9% (37/65) | — | 待回测 |
 | 单次准确率（单账户） | — | 89.2% (33/37) | 待回测 |
@@ -191,5 +191,5 @@
 - 📦 [v5.0.0 升级日志](RELEASE_NOTES_V5.md)
 - 🚀 [v3→v5 升级指南](MIGRATION_V3_TO_V5.md)
 - 🔢 [数字参数](NUMERIC_PARAMETERS.md) — 所有时序/超时阈值
-- 📜 [TEST_SUMMARY.md](TEST_SUMMARY.md) — v3.x.A/v3.x.B 时期 baseline
+- 📜 [TEST_SUMMARY.md](TEST_SUMMARY.md) — v5.0.0-alpha/beta 时期 baseline
 - 🏗️ [架构文档](ARCHITECTURE.md)

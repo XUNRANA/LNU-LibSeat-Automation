@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 🎨 GUI 架构文档
 
@@ -100,13 +100,38 @@ if __name__ == "__main__":
 
 ```python
 class C:
-    BG       = "#0a0e1a"       # 主背景：深蓝黑
-    CARD     = "#161b2c"       # 卡片背景
-    AMBER    = "#f59e0b"       # 强调色：琥珀
-    PRIMARY  = "#4f46e5"       # 主色：靛蓝
-    SUCCESS  = "#10b981"       # 成功绿
-    DANGER   = "#ef4444"       # 警告红
-    # ... 更多
+    # 纸感背景
+    BG          = "#f5f1e8"   # 米白
+    BG_PAPER    = "#faf6ec"   # 略亮纸
+
+    # 卡片
+    CARD        = "#fdfcf8"   # 蛋壳白
+    CARD_SUNK   = "#f0ead9"   # 内嵌区域底色
+    BORDER      = "#e8e2d3"   # 浅琥珀边
+
+    # 主色 LNU 海军蓝
+    INK         = "#003876"
+    INK_LIGHT   = "#1e5599"
+    INK_DARK    = "#002654"
+    INK_TINT    = "#e2eaf3"   # 极浅蓝（hover/selected 背景）
+
+    # 强调 琥珀
+    AMBER       = "#d4a574"
+    AMBER_HOT   = "#b8854a"
+    AMBER_LIGHT = "#e8c896"
+    AMBER_GLOW  = "#f5e2c4"
+
+    # 文字
+    TEXT        = "#1a1a1a"
+    TEXT_MUTED  = "#5a5a5a"
+    TEXT_DIM    = "#9a9a9a"
+    TEXT_INVERT = "#fdfcf8"
+
+    # 状态
+    OK          = "#5b8c5a"
+    WARN        = "#c8923c"
+    ERR         = "#9b3838"
+    ERR_LIGHT   = "#f0d8d8"
 ```
 
 ### 字体函数
@@ -154,7 +179,7 @@ def mono(size: int) -> QFont:     # 等宽（日志/代码）
 | 自习室选择 | `QComboBox`（联动校区） |
 | 首选座位 | `SeatGrid` |
 | 主账号 | `AccountCard` |
-| 副账号（可选） | `AccountCard` + 启用开关 |
+| 更多账号（可选） | `AccountCard` + 启用开关 |
 | 模式切换 | `ModeToggle`（立即/定时） |
 | 定时时间 | 时分输入框（仅定时模式可见） |
 | 邮件 | 邮箱输入框 |
@@ -298,10 +323,10 @@ ROOM_DATA = {
 from ctypes import windll
 ES_CONTINUOUS       = 0x80000000
 ES_SYSTEM_REQUIRED  = 0x00000001
-ES_AWAYMODE_REQUIRED = 0x00000040
+ES_DISPLAY_REQUIRED = 0x00000002
 
 windll.kernel32.SetThreadExecutionState(
-    ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED
+    ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
 )
 ```
 
@@ -386,7 +411,7 @@ shutil.copytree(
 只改 `theme.py` 一个文件即可。
 
 > [!TIP]
-> 强烈建议保留现有主题色（琥珀 + 靛蓝 + 深蓝黑）的对比度——这是经过设计师调整的高可读组合。
+> 强烈建议保留现有主题色（琥珀 + 海军蓝 + 米白纸感）的对比度——这是经过设计师调整的高可读组合。
 
 ---
 

@@ -13,7 +13,7 @@ Usage:
     python build.py
 
 Output:
-    dist/LNU-LibSeat-v4.0.0/
+    dist/LNU-LibSeat-v5.0.0/
         LNU-LibSeat.exe   <- Double-click to run (GUI)
         logs/              <- Log output (auto-created)
 """

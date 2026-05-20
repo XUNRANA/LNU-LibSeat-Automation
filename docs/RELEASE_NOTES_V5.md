@@ -222,7 +222,7 @@ def _start_captcha_model_preload(reason: str = "scheduled"):
 > v5.0.0 让 LNU-LibSeat 彻底摆脱了商业 API 的成本压力，但作者仍在为大家维护、训练新模型、修 bug。
 > 如果工具帮到了你，**随手扫码赞助**就是最大的鼓励 ❤️
 >
-> 👉 二维码在 [README 底部 ☕ 赞助章节](../README.md#-求赞助--让免费持续)
+> 👉 二维码在 [README 底部 ☕ 赞助章节](../README.md#-求赞助--支持持续开发)
 
 ---
 
@@ -243,6 +243,6 @@ def _start_captcha_model_preload(reason: str = "scheduled"):
 
 **喜欢这次更新？**
 
-[⭐ Star 一下](https://github.com/XUNRANA/LNU-LibSeat-Automation) · [☕ 赞助一杯奶茶](../README.md#-求赞助--让免费持续) · [🐛 反馈 Bug](https://github.com/XUNRANA/LNU-LibSeat-Automation/issues)
+[⭐ Star 一下](https://github.com/XUNRANA/LNU-LibSeat-Automation) · [☕ 赞助一杯奶茶](../README.md#-求赞助--支持持续开发) · [🐛 反馈 Bug](https://github.com/XUNRANA/LNU-LibSeat-Automation/issues)
 
 </div>

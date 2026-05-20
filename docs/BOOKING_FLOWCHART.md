@@ -25,7 +25,7 @@ flowchart TD
     A["main() 启动"] --> B["读取配置 USERS / TARGET_ROOM / WAIT_FOR_0630"]
     B --> C["为每个账号注册独立日志文件"]
     C --> D["为每个账号启动 thread_task 线程"]
-    D --> E["账号之间间隔 5 秒启动，降低并发请求"]
+    D --> E["每个账号按 slot_index × 8s 偏移 prep_at，错开浏览器启动"]
     E --> F{"定时模式 WAIT_FOR_0630?"}
 
     F -- "是" --> G["fire_at=配置小时分钟；如果已过则排次日"]
@@ -229,12 +229,12 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["进入验证码循环"] --> B["max_retries = API窗口内 5 次；否则本地 OCR 10 次"]
+    A["进入验证码循环"] --> B["max_retries = 10 次（本地 YOLO4+Siamese）"]
     B --> C{"还有验证码尝试次数?"}
     C -- "否" --> OUT1["关闭验证码和预约弹窗，换下一个座位"]
     C -- "是" --> D["pre_solve_captcha()"]
 
-    D -- "5 秒内没有验证码弹窗" --> E["captcha_passed=True，直接 check_result()"]
+    D -- "3 秒内没有验证码弹窗" --> E["captcha_passed=True，直接 check_result()"]
     D -- "未解析成功" --> D1["刷新验证码，进入下一次验证码尝试"]
     D1 --> C
     D -- "解析成功" --> F["fire_captcha_blitz()"]

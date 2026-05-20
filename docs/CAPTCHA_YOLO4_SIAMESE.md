@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 🧠 验证码引擎：YOLO4 + Siamese
 
@@ -276,7 +276,7 @@ def preload_yolo4_siamese_model(reason: str = "manual"):
 
 > 完整性能数据见 [V5_PERFORMANCE.md](V5_PERFORMANCE.md)。
 
-### 实测局限性（来自 v3.x.A/v3.x.B 阶段测试）
+### 实测局限性（来自 v5.0.0 开发阶段测试）
 
 | 因素 | 说明 |
 |------|------|
@@ -386,7 +386,7 @@ pip install -r requirements.txt
 <summary><b>Q5: Click3 准确率很低？</b></summary>
 
 Click3 难度高（3 点全对才算成功）。本项目 Click3 模型还在迭代中：
-- v3.x.A/v3.x.B 测试集：73-74%
+- v5.0.0 开发阶段测试集：73-74%
 - 生产环境（含双账户压力）：~57%
 
 如果你常抢 Click3 验证码的自习室，建议保留备用账号或调整为 Click1 高峰期。

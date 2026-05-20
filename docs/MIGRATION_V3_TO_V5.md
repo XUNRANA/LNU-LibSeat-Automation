@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 🚀 v3 → v5 升级指南
 
@@ -28,7 +28,7 @@
 | 6:30 验证码依赖付费 API，作者钱包烧不起 | **自研 YOLO4+Siamese**，本地推理零成本 |
 | CustomTkinter 在高分屏渲染不一致 | **PySide6 全新界面**，Qt 原生渲染 |
 | 首次验证码冷启动 3–5s | **后台异步预加载** |
-| 双校区只有 20 间自习室 | **新增「智慧空间」**（+281 座位） |
+| 双校区仅包含旧版 20 间 | **新增「智慧空间」**（+281 座位） |
 
 完整变化清单：[RELEASE_NOTES_V5.md](RELEASE_NOTES_V5.md)。
 
@@ -121,10 +121,6 @@ python gui_qt.py
 ```powershell
 python build.py
 ```
-
-> [!NOTE]
-> `build.py` 当前版本号仍写 `v3.x.B`（草稿），首次打 v5 之前请手动改为 `v5.0.0`。
-> 文件位置：`build.py:28` `APP_VERSION = "v3.x.B"` → `"v5.0.0"`。
 
 ---
 

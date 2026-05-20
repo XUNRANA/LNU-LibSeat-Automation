@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 📦 LNU-LibSeat **v3.0.0**
 
@@ -13,11 +13,14 @@
 
 </div>
 
+> [!IMPORTANT]
+> 📜 **这是 v3.0.0 的历史 Release Notes**。v5.0.0 已对验证码引擎做了完全重构（移除图鉴 API，改用本地 YOLO4+Siamese）；部分 v3 功能在 v5 中有变更（如座位号不再允许留空）。最新版本信息请参阅 [RELEASE_NOTES_V5.md](RELEASE_NOTES_V5.md)。
+
 ---
 
 ## 🎯 一句话 
 
-> 以前你只能死磕填进去的座位号，**现在它会替你扫整间自习室**——首选耗尽自动随机摇号，双校区 20 间自习室全覆盖。
+> 以前你只能死磕填进去的座位号，**现在它会替你扫整间自习室**——首选耗尽自动随机摇号，双校区 20 个自习室（v5.0.0 已扩充至 21 间）全覆盖。
 
 ---
 
@@ -29,7 +32,7 @@
 | 🤖 验证码引擎 | 仅本地 ddddocr | **API（商业级）+ ddddocr 双引擎** |
 | 🎬 抢座过程记录 | 单一日志文件 | **独立目录 + 4 阶段截图 + MP4 录屏** |
 | ⏰ 提前锁座 | `fire_at - 2s` | **`fire_at - 6s`**（更稳，避免锁座 3-4s 吃掉触发时机） |
-| 🚀 触发时序 | `fire_at` 立即点座位 | **`fire_at + 1s` 才点**（避开服务端切换"放座状态"瞬态空档） |
+| 🚀 触发时序 | `fire_at` 立即点座位 | **`fire_at + 2s` 才点**（避开服务端切换"放座状态"瞬态空档） |
 | ⏲️ 抢座时刻 | 严格 6:30 | **严格 6:30 + 自定义时刻** |
 | 🛡️ 黑名单处理 | 继续重试（加重处罚） | **立即停止本次会话** |
 | 🔁 验证码重试上限 | 统一 N 次 | **API 5 次 / 本地 OCR 10 次**（差异化） |
@@ -42,11 +45,11 @@
 > [!TIP]
 > 下面 5 条是你下载新版后**第一次跑就能感受到**的差异。
 
-### 1. 🎯 不填座位号也能抢
+### 1. 🎯 首选座位 + 自动兜底扫描
 
-填 0 个首选 → 它会**扫整间自习室全部座位**；填 3 个首选 → 它先死磕这 3 个，失败后**自动兜底扫剩下的**。
+填多个首选 → 它先按顺序死磕这几个，失败后**自动兜底扫剩余的座位**。
 
-> "我也不知道哪个座位好，反正三楼智慧研修空间随便给一个就行" — 这种用户从今天起完美适配。
+> ⚠️ **v5 起座位号不可留空**（GUI 校验强制至少填一个），但兜底扫描仍然有效——你只需要填几个首选，程序会自动扫其余的。
 
 ### 2. 📁 每次抢座都被完整记录
 
@@ -76,12 +79,12 @@ logs/sessions/20260504_062930_2024xxxxxx/
 不一定 6:30。GUI 里可以填**任意 hh:mm**——以后图书馆要是改放座点，你不用等作者更新版本。
 
 <p align="center">
-  <img src="screenshots/gui_scheduled.png" width="520" alt="GUI 自定义抢座时刻">
+  <img src="screenshots/gui_main.png" width="520" alt="GUI 自定义抢座时刻">
 </p>
 
 ### 5. ⚡ 6:30 卡点更稳
 
-触发后**多等 1 秒**再点座位——避开服务端从"未放座"切换到"已放座"的瞬态空档。
+触发后**多等 2 秒**再点座位——避开服务端从"未放座"切换到"已放座"的瞬态空档。
 
 实测能多救几个本来会被挤掉的座位。
 
@@ -102,7 +105,7 @@ logs/sessions/20260504_062930_2024xxxxxx/
    系统已在 6:30-6:35 高峰期**自动**启用 API（5 分钟窗口），其他时段走免费本地 OCR。
    👉 详见 [README §「关于图鉴 API 抢座」](../README.md)
 
-3. **`config.py` 新增字段** `FORCE_API_ALWAYS = False`
+3. **`config.py` 新增字段** `FORCE_API_ALWAYS = False`（注：该字段已在 v5.0.0 中随图鉴 API 一并完全废弃并移除）
    旧 `config.py` 缺这个字段不会报错（缺省为 False），但建议让 GUI 重新生成。
 
 ### 推荐升级流程
@@ -126,10 +129,10 @@ Remove-Item config.py
 ## ☕ 顺便说一句
 
 > [!NOTE]
-> 图鉴 API 现在还在**作者钱包里**——每月垫付支撑大家用。
+> v5.0.0 起验证码已改用**本地 YOLO4+Siamese 推理**，无需付费 API。
 > 如果工具帮到你，**随手扫码**欢迎赞助。❤️
 > 
-> 👉 二维码在 [README 底部 ☕ 赞助章节](../README.md#-求赞助--让免费持续)
+> 👉 二维码在 [README 底部 ☕ 赞助章节](../README.md#-求赞助--支持持续开发)
 
 ---
 
@@ -157,7 +160,7 @@ extended_seats.extend(fallback)
 ### 双引擎验证码 + 双保险点击
 
 - **API 时间窗口** 6:30:00-6:35:00 由 `logic/booker.py:_should_use_api()` 判定
-- **`FORCE_API_ALWAYS = True`** 可强制全天走 API
+- **`FORCE_API_ALWAYS = True`** [已在 v5.0.0 中完全移除] 可强制全天走 API
 - **ActionChains 真实鼠标事件** 走精确偏移量
 - **1.5 秒后按钮仍未渲染** → JS `dispatchEvent` 用精确 CSS 坐标补点
 - **Vue 异步状态** 把确认按钮从 `<div class="confirm-btn disabled">` 切换到 `<button class="el-button confirm-btn">` 是异步的——选择器改成 `.el-button.confirm-btn` 才能区分二者
@@ -176,7 +179,7 @@ extended_seats.extend(fallback)
 | `PREP_LEAD_SECONDS` | **30** | `fire_at` 前多久启动浏览器并登录 |
 | `SEAT_LOCK_LEAD_SECONDS` | **6** | `fire_at` 前多久锁定座位（v2.x 是 2，太短） |
 | `MAINTENANCE_RETRY_INTERVAL_SECONDS` | **120** | 系统维护时的重试间隔 |
-| 触发后 sleep | **1s** | 让服务端切换到"已放座"状态再点 |
+| 触发后 sleep | **2s** | 让服务端切换到"已放座"状态再点 |
 | API 重试上限 | **5/座位** | 比本地少（API 慢，避免堆积） |
 | 本地 OCR 重试上限 | **10/座位** | 比 API 多（本地快） |
 | API 时间窗口 | **06:30:00-06:35:00** | 高峰期强制走 API |
@@ -253,6 +256,6 @@ extended_seats.extend(fallback)
 
 **喜欢这次更新？**
 
-[⭐ Star 一下](https://github.com/XUNRANA/LNU-LibSeat-Automation) · [☕ 赞助一杯奶茶](../README.md#-求赞助--让免费持续) · [🐛 反馈 Bug](https://github.com/XUNRANA/LNU-LibSeat-Automation/issues)
+[⭐ Star 一下](https://github.com/XUNRANA/LNU-LibSeat-Automation) · [☕ 赞助一杯奶茶](../README.md#-求赞助--支持持续开发) · [🐛 反馈 Bug](https://github.com/XUNRANA/LNU-LibSeat-Automation/issues)
 
 </div>
