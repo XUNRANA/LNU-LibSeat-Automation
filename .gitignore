@@ -52,7 +52,7 @@ dataset/
 真实效果/
 runs/
 scratch/
-delete/
+train/
 
 # Browser profiles (Selenium user data)
 profiles/

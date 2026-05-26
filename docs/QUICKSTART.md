@@ -51,7 +51,7 @@ flowchart TD
 前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest)，下载 `LNU-LibSeat-v5.0.0.zip`，解压到任意位置。
 
 <p align="center">
-  <img src="screenshots/github_release.png" width="600" alt="GitHub Releases 页面">
+  <img src="screenshots/00_github_release.png" width="600" alt="GitHub Releases 页面">
 </p>
 
 ### Step 2️⃣ 运行
@@ -59,7 +59,7 @@ flowchart TD
 双击解压后的 `LNU-LibSeat.exe`。
 
 <p align="center">
-  <img src="screenshots/folder_structure.png" width="600" alt="解压后的目录结构">
+  <img src="screenshots/01_folder_structure.png" width="600" alt="解压后的目录结构">
 </p>
 
 ### Step 3️⃣ 配置
@@ -67,7 +67,7 @@ flowchart TD
 GUI 打开后填表：
 
 <p align="center">
-  <img src="screenshots/gui_main.png" width="700" alt="GUI 配置界面">
+  <img src="screenshots/02_gui_main.png" width="700" alt="GUI 配置界面">
 </p>
 
 | 区域 | 填什么 |

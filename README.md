@@ -106,18 +106,18 @@
 <td align="center" width="333">
 <h3>① 下载</h3>
 <a href="https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest">
-<img src="docs/screenshots/github_release.png" width="280" alt="去 Releases 下 zip">
+<img src="docs/screenshots/00_github_release.png" width="280" alt="去 Releases 下 zip">
 </a>
 <p>去 <a href="https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest">Releases</a> 下载<br><code>LNU-LibSeat-v5.0.0.zip</code></p>
 </td>
 <td align="center" width="333">
 <h3>② 解压 → 双击</h3>
-<img src="docs/screenshots/folder_structure.png" width="280" alt="解压后双击 exe">
+<img src="docs/screenshots/01_folder_structure.png" width="280" alt="解压后双击 exe">
 <p>解压到任意位置<br>双击 <code>LNU-LibSeat.exe</code></p>
 </td>
 <td align="center" width="333">
 <h3>③ 填表 → 开始</h3>
-<img src="docs/screenshots/gui_main.png" width="280" alt="填表点开始">
+<img src="docs/screenshots/02_gui_main.png" width="280" alt="填表点开始">
 <p>填学号密码 + 时段<br>点「🚀 开始抢座」</p>
 </td>
 </tr>
@@ -188,21 +188,21 @@ Click1 端到端 <b>83.48%</b> 准确率，单次 &lt; 1s。
 
 ### 立即执行 — 自动登录 + 验证码识别 + 选座全流程
 
-![GUI 立即执行](docs/screenshots/gui_main.png)
+![GUI 立即执行](docs/screenshots/02_gui_main.png)
 
 ### 定时模式 — 双账号分时段挂机
 
 - **06:30:00 启动抢座**：
-  ![06:30:00 启动抢座](docs/screenshots/gui_scheduled_running.png)
+  ![06:30:00 启动抢座](docs/screenshots/03_gui_scheduled_running.png)
 - **06:30:02 验证码识别与提交**：
-  ![06:30:02 验证码识别与提交](docs/screenshots/gui_scheduled_clicking.png)
+  ![06:30:02 验证码识别与提交](docs/screenshots/04_gui_scheduled_clicking.png)
 - **06:30:05 预约成功**：
-  ![预约成功](docs/screenshots/gui_scheduled_success.png)
+  ![预约成功](docs/screenshots/05_gui_scheduled_success.png)
 
 ### 手机即时收到成功通知邮件
 
 <p align="center">
-  <img src="docs/screenshots/email_notification.png" width="320" alt="邮件通知">
+  <img src="docs/screenshots/06_email_notification.png" width="320" alt="邮件通知">
 </p>
 
 ---
@@ -532,6 +532,15 @@ LNU-LibSeat-Automation/
 - 请准时到馆签到，避免被列入黑名单
 - 请勿将抢到的座位转售或用于其他商业目的
 - **所有使用后果由使用者自行承担**
+
+## 🙏 致谢
+
+本项目站在两位前人的肩膀上完成，特别感谢：
+
+- **[geTiger/get_LibSeat](https://github.com/geTiger/get_LibSeat)** — 辽宁大学图书馆抢座的最早开源实现，本项目最初的抢座流程、表单字段、接口调用思路均参考自此项目。没有 geTiger 的开源，这个项目可能根本不会出现。
+- **[MgArcher/Text_select_captcha](https://github.com/MgArcher/Text_select_captcha)** — 文字点选验证码识别的开源方案，本项目自研的 **YOLO + Siamese 双阶段管线**（[`core/captcha_yolo4_siamese.py`](core/captcha_yolo4_siamese.py)）的整体架构、`Siamese MobileNetV4` 模型设计、`plan + bg` 合成图训练范式都源自这个项目。v5.0.0 能彻底告别付费 API、走纯本地 ONNX 推理，要把最大的一份感谢给 MgArcher。
+
+如果你觉得本项目有用，**也请去给上面两个仓库点个 Star** ⭐。
 
 ## 📄 License
 

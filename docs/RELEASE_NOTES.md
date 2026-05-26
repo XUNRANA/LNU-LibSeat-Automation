@@ -79,7 +79,7 @@ logs/sessions/20260504_062930_2024xxxxxx/
 不一定 6:30。GUI 里可以填**任意 hh:mm**——以后图书馆要是改放座点，你不用等作者更新版本。
 
 <p align="center">
-  <img src="screenshots/gui_main.png" width="520" alt="GUI 自定义抢座时刻">
+  <img src="screenshots/02_gui_main.png" width="520" alt="GUI 自定义抢座时刻">
 </p>
 
 ### 5. ⚡ 6:30 卡点更稳
