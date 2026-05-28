@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import ctypes
+import subprocess
 import sys
 from ctypes import wintypes
 
@@ -50,6 +51,35 @@ class _LASTINPUTINFO(ctypes.Structure):
 
 
 _heartbeat_timer = None
+_caffeinate_proc = None
+
+
+def _enable_macos() -> bool:
+    """macOS：用系统自带 caffeinate 阻止睡眠（显示器/系统/磁盘/用户活跃）。"""
+    global _caffeinate_proc
+    if _caffeinate_proc is not None and _caffeinate_proc.poll() is None:
+        return True
+    try:
+        _caffeinate_proc = subprocess.Popen(
+            ["caffeinate", "-dimsu"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return True
+    except Exception:
+        _caffeinate_proc = None
+        return False
+
+
+def _disable_macos() -> bool:
+    """macOS：结束 caffeinate 进程，恢复常规休眠。"""
+    global _caffeinate_proc
+    if _caffeinate_proc is not None:
+        try:
+            _caffeinate_proc.terminate()
+        except Exception:
+            pass
+        _caffeinate_proc = None
+    return True
 
 
 def _set_state(flags: int) -> bool:
@@ -97,8 +127,10 @@ def _heartbeat_tick() -> None:
 
 
 def enable() -> bool:
-    """开启防休眠并启动心跳定时器。返回是否成功；非 Windows 平台直接返回 False。"""
+    """开启防休眠。Windows: ExecutionState + 心跳；macOS: caffeinate；其它平台返回 False。"""
     global _heartbeat_timer
+    if sys.platform == "darwin":
+        return _enable_macos()
     if not sys.platform.startswith("win"):
         return False
     if not _set_state(_ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_DISPLAY_REQUIRED):
@@ -119,6 +151,8 @@ def enable() -> bool:
 def disable() -> bool:
     """关闭心跳并恢复系统常规休眠策略。"""
     global _heartbeat_timer
+    if sys.platform == "darwin":
+        return _disable_macos()
     if not sys.platform.startswith("win"):
         return False
     if _heartbeat_timer is not None:

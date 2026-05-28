@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sys
 
+from core import paths
 from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
@@ -17,9 +18,8 @@ HERO_CIRCLE_SIZE = 360
 
 
 def _base_dir() -> str:
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    """Logo 等只读资源的根目录（冻结后 = sys._MEIPASS，开发态 = 项目根）。"""
+    return str(paths.resource_root())
 
 
 class LogoImage(QLabel):

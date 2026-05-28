@@ -1,0 +1,35 @@
+name: Build macOS
+
+# 在 macOS 云端 runner 上构建 .app 并打成 zip（Windows 本机无法构建 Mac 应用）。
+on:
+  push:
+    tags: ['v*']          # 推送 v* 标签时自动构建并挂到 Release
+  workflow_dispatch:       # 也可在 Actions 页手动触发（产物在 Artifacts）
+
+jobs:
+  build-macos:
+    runs-on: macos-14      # Apple Silicon (arm64)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build macOS app
+        run: python build_mac.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LNU-LibSeat-macOS-arm64
+          path: dist/*-macOS-*.zip
+          if-no-files-found: error
+
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*-macOS-*.zip

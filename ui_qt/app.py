@@ -5,6 +5,8 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
+from core import paths
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import (
@@ -25,17 +27,12 @@ def _bj_now():
     return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=8)))
 
 
-def _base_dir() -> str:
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
 def _logo_path() -> str:
-    logo_path = os.path.join(_base_dir(), "logo1.png")
-    if not os.path.exists(logo_path):
-        logo_path = os.path.join(_base_dir(), "logo.ico")
-    return logo_path
+    base = paths.resource_root()
+    logo = base / "logo1.png"
+    if not logo.exists():
+        logo = base / "logo.ico"
+    return str(logo)
 
 
 def _double_separator():
@@ -69,7 +66,7 @@ class MainWindow(QMainWindow):
         self.resize(1400, 920)
         self.setMinimumSize(1100, 760)
 
-        self._config_path = os.path.join(_base_dir(), "config.py")
+        self._config_path = str(paths.app_data_dir() / "config.py")
         self._anti_sleep_enabled = False
 
         # 中央容器

@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QVBoxLayout, QWidget,
 )
 
-from ..services.config_io import AccountState, GuiState, MAX_ACCOUNTS, ROOM_DATA, account_entries
+from ..services.config_io import AccountState, GuiState, MAX_ACCOUNTS, ROOM_DATA, account_entries, default_browser
 from ..theme import C, mono, sans
 from ..widgets.account_card import AccountCard
 from ..widgets.mode_toggle import ModeToggle
@@ -264,6 +264,13 @@ class ConfigPanel(QWidget):
 
         card.add_widget(self.sched_frame)
 
+        # 浏览器选择（macOS 默认 Chrome，Windows 默认 Edge；Safari 仅单账号）
+        br_row = QHBoxLayout()
+        br_row.addWidget(_row_label("浏 览 器"))
+        self.cb_browser = _styled_combo(["Chrome", "Edge", "Safari"])
+        br_row.addWidget(self.cb_browser, stretch=1)
+        card.add_layout(br_row)
+
         return card
 
     def _style_time_box(self, edit: QLineEdit):
@@ -307,6 +314,7 @@ class ConfigPanel(QWidget):
                 s.accounts.append(entry)
         s.sync_legacy_fields()
         s.email = self.email_input.text().strip()
+        s.browser = self.cb_browser.currentText().strip().lower()
         s.mode = self.mode_toggle.mode()
         try:
             s.sched_hour = int(self.sched_hour.text() or "6")
@@ -341,6 +349,10 @@ class ConfigPanel(QWidget):
         self.chk_use_acc2.setChecked(has_extra_accounts)
         self._on_toggle_acc2(has_extra_accounts)
         self.email_input.setText(state.email)
+        _br = (state.browser or default_browser()).capitalize()
+        _bi = self.cb_browser.findText(_br)
+        if _bi >= 0:
+            self.cb_browser.setCurrentIndex(_bi)
         self.mode_toggle.set_mode(state.mode, silent=False)
         self.sched_hour.setText(f"{state.sched_hour:02d}")
         self.sched_min.setText(f"{state.sched_min:02d}")
@@ -349,7 +361,7 @@ class ConfigPanel(QWidget):
         for w in (
             self.cb_campus, self.cb_room, self.seats,
             *self.account_cards, self.chk_use_acc2,
-            self.email_input, self.mode_toggle,
+            self.email_input, self.cb_browser, self.mode_toggle,
             self.sched_hour, self.sched_min,
         ):
             w.setEnabled(enabled)

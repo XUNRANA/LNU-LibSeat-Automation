@@ -1,4 +1,5 @@
 import os
+import sys
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -12,6 +13,11 @@ def _cfg(attr, default=""):
 
 logger = get_logger(__name__)
 
+
+def _default_browser() -> str:
+    """平台默认浏览器：Windows 用 Edge，macOS/Linux 用 Chrome。"""
+    return "edge" if sys.platform == "win32" else "chrome"
+
 # Import webdriver-manager lazily to avoid hard dependency during import-time in tests
 try:
     from webdriver_manager.microsoft import EdgeChromiumDriverManager
@@ -24,7 +30,11 @@ except Exception:
 
 
 def _build_options(browser: str):
-    """Return (options, service_class) appropriate for the requested browser."""
+    """Return options appropriate for the requested browser."""
+    if browser == 'safari':
+        # Safari 不支持任何 Chromium 选项（UA 伪装 / --user-data-dir / excludeSwitches 等）
+        from selenium.webdriver.safari.options import Options as SafariOptions
+        return SafariOptions()
     if browser == 'chrome':
         opts = ChromeOptions()
     else:
@@ -133,12 +143,20 @@ def get_driver(user_data_dir: str = None):
 
     Raises a RuntimeError with actionable guidance if no driver is available.
     """
-    if not user_data_dir:
+    browser = (_cfg('BROWSER', '') or _default_browser()).lower()
+
+    if browser == 'edge' and not user_data_dir:
         _cleanup_edge_lock_files()
 
-    browser = (_cfg('BROWSER', 'edge') or 'edge').lower()
-
     opts = _build_options(browser)
+
+    if browser == 'safari':
+        if user_data_dir:
+            logger.warning("Safari 不支持 --user-data-dir，已忽略；多账号将共享登录态且只能串行运行。")
+        from selenium.webdriver.safari.service import Service as SafariService
+        drv = webdriver.Safari(service=SafariService(), options=opts)
+        drv.set_page_load_timeout(30)
+        return drv
 
     if user_data_dir:
         opts.add_argument(f'--user-data-dir={user_data_dir}')

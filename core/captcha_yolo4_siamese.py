@@ -36,7 +36,11 @@ class Yolo4SiameseResult:
 
 
 def _project_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    try:
+        from core.paths import resource_root
+        return resource_root()
+    except Exception:
+        return Path(__file__).resolve().parents[1]
 
 
 def _resolve_path(path: str | Path) -> Path:

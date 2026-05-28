@@ -13,6 +13,11 @@ from dataclasses import dataclass, field
 MAX_ACCOUNTS = 2
 
 
+def default_browser() -> str:
+    """平台默认浏览器：Windows→edge，其它（macOS/Linux）→chrome。"""
+    return "edge" if sys.platform == "win32" else "chrome"
+
+
 @dataclass
 class AccountState:
     account: str = ""
@@ -53,6 +58,7 @@ class GuiState:
     accounts: list[AccountState] = field(default_factory=lambda: [AccountState()])
 
     email: str = ""
+    browser: str = ""  # "chrome" | "edge" | "safari"；空 = 按平台默认
     mode: str = "scheduled"  # "now" | "scheduled"
     sched_hour: int = 6
     sched_min: int = 30
@@ -151,6 +157,8 @@ def load_state(config_path: str) -> GuiState:
             state.room = v
         if v := ns.get("RECEIVER_EMAIL"):
             state.email = v
+        if v := ns.get("BROWSER"):
+            state.browser = str(v).lower()
 
         state.seats = list(ns.get("PREFER_SEATS", []) or [])
         state.mode = "scheduled" if ns.get("WAIT_FOR_0630", True) else "now"
@@ -220,7 +228,7 @@ def save_state_to_file(state: GuiState, config_path: str) -> None:
         f"PREFER_SEATS = [{seats_str}]\n\n"
         f"WAIT_FOR_0630 = {is_sched}\n"
         f"MAX_ACCOUNTS = {MAX_ACCOUNTS}\n"
-        '\nBROWSER = "edge"\nDRIVER_PATH = ""\nWEBDRIVER_CACHE = ""\n\n'
+        f'\nBROWSER = "{esc(state.browser or default_browser())}"\nDRIVER_PATH = ""\nWEBDRIVER_CACHE = ""\n\n'
         f'RECEIVER_EMAIL = "{esc(state.email)}"\n'
         'SMTP_USER = ""\nSMTP_PASS = ""\n\n'
         'LOG_LEVEL = "INFO"\nLOG_DIR = "logs"\n'
@@ -252,7 +260,7 @@ def inject_into_sys_modules(state: GuiState) -> None:
     cfg.PREFER_SEATS = list(state.seats)
     cfg.WAIT_FOR_0630 = is_sched
     cfg.MAX_ACCOUNTS = MAX_ACCOUNTS
-    cfg.BROWSER = "edge"
+    cfg.BROWSER = state.browser or default_browser()
     cfg.DRIVER_PATH = ""
     cfg.WEBDRIVER_CACHE = ""
     cfg.RECEIVER_EMAIL = state.email.strip()
@@ -260,18 +268,12 @@ def inject_into_sys_modules(state: GuiState) -> None:
     cfg.SMTP_PASS = ""
     cfg.LOG_LEVEL = "INFO"
 
-    # LOG_DIR 用绝对路径，确保打包后定位正确
-    log_dir = "logs"
+    # LOG_DIR 用绝对路径，确保打包后定位正确（macOS 下落在 .app 同级目录）
     try:
-        if getattr(sys, "frozen", False):
-            log_dir = os.path.join(os.path.dirname(sys.executable), "logs")
-        else:
-            log_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                "logs",
-            )
+        from core import paths
+        log_dir = str(paths.app_data_dir() / "logs")
     except Exception:
-        pass
+        log_dir = "logs"
     cfg.LOG_DIR = log_dir
 
     if is_sched:
