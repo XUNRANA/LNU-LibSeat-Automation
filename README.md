@@ -298,13 +298,12 @@ DOM 抓图 → base64 解码
 
 <table align="center" border="0" cellspacing="0">
 <tr>
-<td align="center"><img src="Alipay.jpg" width="240" alt="支付宝"><br><b>支付宝</b></td>
 <td width="300" align="center" valign="middle">
   <b>☕ 你的赞助将用于</b><br>
-  <b>模型训练 · 测试 · 服务器</b><br>
+  <b>模型训练 · 测试</b><br>
   <sub>让免费持续 ❤️</sub>
 </td>
-<td align="center"><img src="Wechat Pay.png" width="240" alt="微信"><br><b>微信支付</b></td>
+<td align="center"><img src="Wechat Pay.png" width="260" alt="微信支付赞助码"><br><b>微信支付</b></td>
 </tr>
 </table>
 
