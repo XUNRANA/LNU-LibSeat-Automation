@@ -42,8 +42,8 @@
 
 ```
 1. 备份你的旧 config.py（里面有学号密码）
-2. 下载 LNU-LibSeat-v5.0.0.zip → 解压到新目录
-3. 双击新 LNU-LibSeat.exe → GUI 自动生成新 config.py
+2. 下载 LNU-LibSeat-v5.0.0-Windows-x86_64.zip（macOS 下 -macOS-x86_64.zip）→ 解压到新目录
+3. 双击新 LNU-LibSeat.exe（macOS 右键 .command 首启 LNU-LibSeat.app）→ GUI 自动生成新 config.py
 ```
 
 ### 详细步骤
@@ -57,11 +57,11 @@ Copy-Item "LNU-LibSeat-v3.0.0\config.py" "$HOME\Desktop\config_v3_backup.py"
 
 **Step 2 下载并解压新版**
 
-去 [Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载 `LNU-LibSeat-v5.0.0.zip`，解压到任意新位置（推荐**不要覆盖旧目录**）。
+去 [Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载 `LNU-LibSeat-v5.0.0-Windows-x86_64.zip`（macOS 用户下载 `LNU-LibSeat-v5.0.0-macOS-x86_64.zip`），解压到任意新位置（推荐**不要覆盖旧目录**）。
 
 **Step 3 重新填表**
 
-双击 `LNU-LibSeat.exe` → 按之前一样填学号 / 密码 / 时段 → 「🚀 开始抢座」。
+双击 `LNU-LibSeat.exe`（macOS：右键 `首次运行请先双击我.command` →「打开」→「打开」，之后双击 `LNU-LibSeat.app`）→ 按之前一样填学号 / 密码 / 时段 → 「🚀 开始抢座」。
 
 > [!TIP]
 > v5 GUI 的字段和 v3 完全兼容，你不需要重学。
@@ -254,7 +254,7 @@ v5 默认禁用图鉴 API，但 `core/captcha_api.py` 文件仍保留。如需�
 升级完成后，按以下步骤验证：
 
 ```
-[ ] 双击 LNU-LibSeat.exe（或 python gui_qt.py）
+[ ] 双击 LNU-LibSeat.exe（macOS：右键 .command 首启 .app；或 python gui_qt.py）
 [ ] GUI 窗口立即弹出（< 1s）
 [ ] 后台日志有「本地 YOLO4+Siamese 验证码模型开始预加载」字样
 [ ] 填表点开始 → 浏览器正常打开

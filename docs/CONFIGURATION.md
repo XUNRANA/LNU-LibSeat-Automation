@@ -3,7 +3,7 @@
 > 📦 适用于 **LNU-LibSeat v5.0.0**
 
 > [!IMPORTANT]
-> **强烈推荐使用 GUI 界面配置**——双击 `LNU-LibSeat.exe` 后填表，GUI 会自动写入 `config.py`。
+> **强烈推荐使用 GUI 界面配置**——双击 `LNU-LibSeat.exe`（macOS 双击 `LNU-LibSeat.app`）后填表，GUI 会自动写入 `config.py`。
 > 本文档面向**高级用户 / 开发者**，用于手编 `config.py` 时查阅。
 
 [← 返回 README](../README.md) ·
@@ -24,7 +24,7 @@
 | `PREFER_SEATS` | list | `["185"]` | ✅ | 优先座位号；⚠️ 不能留空，至少填一个座位 |
 | `WAIT_FOR_0630` | bool | `False` | ✅ | True=定时模式 / False=立即模式 |
 | `MAX_ACCOUNTS` | int | `2` | ✅ | **v5 新增**：多账号并发上限（超过自动截断） |
-| `BROWSER` | str | `"edge"` | ✅ | `"edge"` 或 `"chrome"` |
+| `BROWSER` | str | 平台默认 | ✅ | `"edge"` / `"chrome"` / `"safari"`；留空=Windows→edge，macOS→chrome |
 | `DRIVER_PATH` | str | `""` | ✅ | 手动指定 WebDriver 路径 |
 | `WEBDRIVER_CACHE` | str | `""` | ✅ | webdriver-manager 缓存目录 |
 | `RECEIVER_EMAIL` | str | `""` | ✅ | 接收成功通知的邮箱 |
@@ -155,7 +155,7 @@ SMTP_PASS = ""
 ## 六、浏览器 / 驱动 / 日志
 
 ```python
-BROWSER = "edge"
+BROWSER = "edge"          # Windows 默认 edge；macOS/Linux 默认 chrome；可填 chrome / edge / safari
 DRIVER_PATH = ""
 WEBDRIVER_CACHE = ""
 LOG_LEVEL = "INFO"
@@ -164,11 +164,17 @@ LOG_DIR = "logs"
 
 | 字段 | 取值 | 说明 |
 |------|-----|------|
-| `BROWSER` | `"edge"` / `"chrome"` | 主流浏览器二选一 |
+| `BROWSER` | `"edge"` / `"chrome"` / `"safari"` | 留空按平台默认：Windows→`edge`，macOS/Linux→`chrome`（见 `core/driver.py`） |
 | `DRIVER_PATH` | 路径字符串 | 手动指定 WebDriver 位置（自动下载失败时使用） |
 | `WEBDRIVER_CACHE` | 路径字符串 | webdriver-manager 缓存目录（默认 `~/.wdm`） |
 | `LOG_LEVEL` | `"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` | 日志等级 |
 | `LOG_DIR` | 路径字符串 | 日志根目录 |
+
+> [!NOTE]
+> **macOS 浏览器选择**：
+> - **Chrome**（推荐）：支持双账号并行，体验与 Windows 一致。
+> - **Safari**：需先开启 Safari ▸ 设置 ▸ 高级 ▸「在菜单栏显示开发菜单」→ 开发 ▸「允许远程自动化」。Safari **不支持 `--user-data-dir`**，因此**仅支持单账号**（多账号只能串行、共享登录态）。
+> - **Edge**：仅 Windows。
 
 ### 日志输出位置
 

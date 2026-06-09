@@ -76,7 +76,7 @@ ui_qt/                          # 23 个 .py 文件
 └── services/                    # ⚙️ 系统服务封装
     ├── __init__.py
     ├── config_io.py             #   config.py 读写 + 数据模型
-    └── prevent_sleep.py         #   Windows 防系统休眠
+    └── prevent_sleep.py         #   防休眠：Windows ExecutionState / macOS caffeinate
 ```
 
 入口：`gui_qt.py` 仅 8 行，委托 `ui_qt.app:main()`：
@@ -183,6 +183,7 @@ def mono(size: int) -> QFont:     # 等宽（日志/代码）
 | 模式切换 | `ModeToggle`（立即/定时） |
 | 定时时间 | 时分输入框（仅定时模式可见） |
 | 邮件 | 邮箱输入框 |
+| 浏览器选择 | `QComboBox`（Chrome / Edge / Safari；macOS 默认 Chrome，Windows 默认 Edge） |
 
 ### DashboardPanel（`ui_qt/panels/dashboard_panel.py`）
 
@@ -341,6 +342,10 @@ windll.kernel32.SetThreadExecutionState(
 ### 退出时还原
 
 GUI 关闭时调用 `SetThreadExecutionState(ES_CONTINUOUS)` 恢复默认休眠策略。
+
+### macOS（caffeinate）
+
+macOS 不用 `SetThreadExecutionState`，而是启动系统自带的 `caffeinate -dimsu` 子进程，阻止显示器 / 系统 / 磁盘休眠并保持用户活跃（`_enable_macos()`）；GUI 关闭时 `terminate()` 该子进程恢复常规休眠（`_disable_macos()`）。上面的**心跳定时器与鼠标抖动是 Windows 专属**，macOS 不需要。其它平台（Linux 等）`enable()` 直接返回 `False`（no-op）。
 
 ---
 

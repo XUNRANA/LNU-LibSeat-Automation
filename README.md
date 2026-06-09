@@ -108,7 +108,7 @@
 <a href="https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest">
 <img src="docs/screenshots/00_github_release.png" width="280" alt="去 Releases 下 zip">
 </a>
-<p>去 <a href="https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest">Releases</a> 下载<br><code>LNU-LibSeat-v5.0.0.zip</code></p>
+<p>去 <a href="https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest">Releases</a> 下载<br><code>LNU-LibSeat-v5.0.0-Windows-x86_64.zip</code></p>
 </td>
 <td align="center" width="333">
 <h3>② 解压 → 双击</h3>
@@ -130,20 +130,21 @@
 
 ---
 
-## 🍎 macOS 用户（Apple 芯片）
+## 🍎 macOS 用户（Intel & Apple 芯片）
 
 Mac 双击不了 `.exe`，请下载 macOS 专版 `.app`：
 
-1. 去 [Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载 `LNU-LibSeat-v5.0.0-macOS-arm64.zip`（仅支持 Apple 芯片 M1/M2/M3…）。
+1. 去 [Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest) 下载 `LNU-LibSeat-v5.0.0-macOS-x86_64.zip`。
 2. 解压后，**右键**点击 `首次运行请先双击我.command` → 「打开」→ 再点一次「打开」。
    - 应用未做苹果付费签名，首次必须用右键打开以解除安全限制；之后可直接双击 `LNU-LibSeat.app`。
    - 若提示「无法打开」，到 **系统设置 ▸ 隐私与安全性 ▸ 仍要打开**。
 3. 装好 **Google Chrome**（默认驱动，支持双账号并行），填表 →「开始抢座」。
 
 > [!NOTE]
+> - **支持所有 Mac**：Intel 芯片**原生运行**；Apple 芯片（M1/M2/M3/M4…）首次启动会**自动通过 Rosetta 2 运行**——系统弹窗点一下装好 Rosetta 即可。
 > - **浏览器**：默认 Chrome；也可在应用内「浏览器」下拉选 Safari（需先开启 Safari ▸ 设置 ▸ 高级 ▸ 显示开发菜单 ▸ 开发 ▸ 允许远程自动化），但 Safari 仅支持**单账号**、不支持双账号并行。
-> - **芯片**：当前仅提供 Apple 芯片（arm64）版；Intel 老款 Mac 暂不支持。
 > - **数据位置**：`config.py`、`logs/` 在解压文件夹内、与 `.app` 同级，可直接查看 / 编辑。
+> - **屏幕录制**：此功能在 macOS 上可能不可用（不影响抢座）。
 
 ---
 
@@ -472,7 +473,9 @@ python gui_qt.py        # v5 入口（v3 是 gui.py）
 </details>
 
 <details>
-<summary><b>PyInstaller 打包成 exe</b></summary>
+<summary><b>PyInstaller 打包：Windows（.exe）/ macOS（.app）</b></summary>
+
+**Windows（产出 `.exe`）：**
 
 ```powershell
 python build.py
@@ -482,7 +485,15 @@ python build.py
 
 输出：
 - `dist/LNU-LibSeat-v5.0.0/` — 可分发的完整文件夹
-- `dist/LNU-LibSeat-v5.0.0.zip` — 直接上传 GitHub Release 用
+- `dist/LNU-LibSeat-v5.0.0.zip` — 上传 GitHub Release 时改名为 `LNU-LibSeat-v5.0.0-Windows-x86_64.zip`
+
+**macOS（产出 `.app`，必须在 Mac 上运行）：**
+
+```bash
+python3 build_mac.py
+```
+
+PyInstaller 不能跨平台编译——`.app` 只能在 macOS 上构建（本地 Mac，或 GitHub Actions 的 `macos-14` runner）。仓库已内置 `.github/workflows/build-macos.yml`：推送 `v*` 标签会自动在云端构建并把 `*-macOS-*.zip` 挂到对应 Release。产物 `dist/LNU-LibSeat-v5.0.0-macOS-<arch>.zip` 内含 `.app` + 外置可编辑 `config.py` + `info/` + `首次运行请先双击我.command` + 使用说明。
 </details>
 
 <details>

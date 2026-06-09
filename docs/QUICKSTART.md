@@ -18,8 +18,8 @@
 
 | 要求 | 说明 |
 |------|------|
-| 💻 操作系统 | Windows 10 / 11 |
-| 🌐 浏览器 | Microsoft Edge **或** Google Chrome（较新版本即可） |
+| 💻 操作系统 | **Windows** 10 / 11，或 **macOS** 11+（Intel 原生 / Apple 芯片经 Rosetta 2 自动运行） |
+| 🌐 浏览器 | Windows：Microsoft Edge **或** Chrome；macOS：Google Chrome（推荐）或 Safari（仅单账号）。较新版本即可 |
 | 📶 网络 | 能正常打开「辽宁大学座位预约系统」 |
 
 > [!NOTE]
@@ -44,11 +44,14 @@ flowchart TD
 
 ---
 
-## 🚀 方式一：下载 EXE（推荐零基础）
+## 🚀 方式一：下载安装包（推荐零基础）
 
 ### Step 1️⃣ 下载
 
-前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest)，下载 `LNU-LibSeat-v5.0.0.zip`，解压到任意位置。
+前往 [GitHub Releases](https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest)，按系统下载并解压到任意位置：
+
+- **Windows**：`LNU-LibSeat-v5.0.0-Windows-x86_64.zip`
+- **macOS**：`LNU-LibSeat-v5.0.0-macOS-x86_64.zip`（首次运行需多一步解除限制，见下方 🍎 小节）
 
 <p align="center">
   <img src="screenshots/00_github_release.png" width="600" alt="GitHub Releases 页面">
@@ -56,7 +59,8 @@ flowchart TD
 
 ### Step 2️⃣ 运行
 
-双击解压后的 `LNU-LibSeat.exe`。
+- **Windows**：双击解压后的 `LNU-LibSeat.exe`。
+- **macOS**：**右键**点击 `首次运行请先双击我.command` →「打开」→ 再点一次「打开」（首次需右键解除未签名限制），之后可直接双击 `LNU-LibSeat.app`。
 
 <p align="center">
   <img src="screenshots/01_folder_structure.png" width="600" alt="解压后的目录结构">
@@ -85,6 +89,15 @@ GUI 打开后填表：
 抢成功后：
 - 📧 邮件秒达手机
 - 📁 完整记录写入 `logs/sessions/<时间>_<学号>/`
+
+### 🍎 macOS 用户额外步骤
+
+> [!NOTE]
+> - **解除限制**：未签名 `.app` 首次必须**右键** `首次运行请先双击我.command` →「打开」→ 再「打开」；若提示「无法打开」，去 **系统设置 ▸ 隐私与安全性 ▸ 仍要打开**。之后直接双击 `LNU-LibSeat.app` 即可。
+> - **支持所有 Mac**：Intel 芯片原生运行；Apple 芯片（M1/M2/M3/M4…）首次启动自动经 **Rosetta 2** 运行（系统弹窗一键安装 Rosetta）。
+> - **浏览器**：默认 Chrome（支持双账号并行）；想用 Safari 需先开启 Safari ▸ 设置 ▸ 高级 ▸ 显示开发菜单 ▸ 开发 ▸ 允许远程自动化，且 Safari **仅支持单账号**。
+> - **数据位置**：`config.py`、`logs/` 与 `.app` 同级，可直接查看 / 编辑。
+> - **屏幕录制**在 macOS 上可能不可用（不影响抢座）。
 
 ---
 
@@ -164,7 +177,7 @@ python build.py
 <details>
 <summary><b>Q4: 电脑会被休眠吗？10 小时挂机靠谱吗？</b></summary>
 
-🛡️ 不会。GUI 启动时自动调用 `SetThreadExecutionState` 申请系统唤醒权限，**全程禁止系统休眠**——支持 10 小时以上挂机。
+🛡️ 不会。Windows 上 GUI 启动时自动调用 `SetThreadExecutionState` 申请系统唤醒权限；macOS 上则用系统自带 `caffeinate` 阻止休眠——两种平台都**全程禁止系统休眠**，支持 10 小时以上挂机。
 程序结束后自动恢复正常休眠策略。
 </details>
 
@@ -181,6 +194,8 @@ python build.py
 6. 完成
 
 之后即使电脑睡眠，到点也会自动醒来抢座。
+
+> 🍎 **macOS**：暂无等价的一键唤醒方案，建议抢座前一晚保持 Mac 开机（合盖不关机即可）；应用运行期间会用 `caffeinate` 自动防休眠。
 </details>
 
 <details>

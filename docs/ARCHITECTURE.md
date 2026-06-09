@@ -370,14 +370,35 @@ flowchart LR
 | 路径 | 说明 |
 |------|------|
 | `dist/LNU-LibSeat-v5.0.0/` | 完整可分发文件夹 |
-| `dist/LNU-LibSeat-v5.0.0/LNU-LibSeat.exe` | 双击运行的 GUI 入口 |
+| `dist/LNU-LibSeat-v5.0.0/LNU-LibSeat.exe` | 双击运行的 GUI 入口（Windows） |
 | `dist/LNU-LibSeat-v5.0.0/config.py` | 干净模板（无个人数据） |
 | `dist/LNU-LibSeat-v5.0.0/info/` | 双校区 21 间自习室座位索引（含新「智慧空间」） |
 | `dist/LNU-LibSeat-v5.0.0/_internal/core/checkpoints/` | YOLO4+Siamese 模型权重 (~210MB) |
 | `dist/LNU-LibSeat-v5.0.0/logs/` | 日志根目录（运行时填充） |
-| `dist/LNU-LibSeat-v5.0.0.zip` | 上传 GitHub Release 用 |
+| `dist/LNU-LibSeat-v5.0.0.zip` | 上传 GitHub Release 用（上传时改名为 `LNU-LibSeat-v5.0.0-Windows-x86_64.zip`） |
 
 > ⚠️ `build.py:28` 中 `APP_VERSION = "v5.0.0"`，表示当前的主版本号。
+
+### macOS 打包（`.app`）
+
+> 源码：`build_mac.py` · CI：`.github/workflows/build-macos.yml`
+
+PyInstaller 无法跨平台编译——`.app` **必须在 macOS 上构建**（本地 Mac，或 GitHub Actions 的 `macos-14` runner；在 Windows 上跑 `build_mac.py` 会直接报错退出）。
+
+```bash
+python3 build_mac.py
+```
+
+流程：干净临时 venv → `sips` + `iconutil` 生成 `logo.icns` → PyInstaller `--windowed`（产出 `.app`，无终端窗口）→ 组装发行夹（`.app` + 外置可编辑 `config.py` + `info/` + `logs/` + `首次运行请先双击我.command` 解除限制脚本 + 使用说明）→ `ditto -c -k --keepParent` 压成 zip（保留符号链接与 ad-hoc 签名）。
+
+| 路径 | 说明 |
+|------|------|
+| `dist/LNU-LibSeat-v5.0.0-macOS-<arch>/` | 发行夹（`<arch>` = 构建机 `platform.machine()`，如 `x86_64` / `arm64`） |
+| `dist/LNU-LibSeat-v5.0.0-macOS-<arch>.zip` | 分发 / 上传 Release 用 |
+
+推送 `v*` 标签时，CI 自动在 `macos-14` 上构建，并用 `softprops/action-gh-release` 把 `*-macOS-*.zip` 挂到对应 Release。
+
+> 🧭 **跨平台路径**：`core/paths.py` 统一解析两类目录——`resource_root()`（只读随包资源，冻结后取 `sys._MEIPASS`）与 `app_data_dir()`（用户可写数据：Windows 紧挨 `.exe`，macOS 落在 `.app` 同级目录，避免写入包内破坏签名）。
 
 ### 关键 PyInstaller 参数
 

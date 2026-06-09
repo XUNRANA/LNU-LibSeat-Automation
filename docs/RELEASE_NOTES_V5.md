@@ -73,7 +73,7 @@ ui_qt/
 │   └── booker_worker.py        # 后台抢座线程（信号槽与 GUI 解耦）
 └── services/
     ├── config_io.py            # 配置 I/O + ROOM_DATA
-    └── prevent_sleep.py        # Windows 防休眠
+    └── prevent_sleep.py        # 防休眠（Windows ExecutionState / macOS caffeinate）
 ```
 
 详见 [GUI_QT_ARCHITECTURE.md](GUI_QT_ARCHITECTURE.md)。
@@ -180,6 +180,26 @@ def _start_captcha_model_preload(reason: str = "scheduled"):
 
 ---
 
+## 🍎 macOS 支持（2026-05-28 追加）
+
+> v5.0.0 首发为 Windows；随后追加了 macOS 原生 `.app` 支持，与 Windows 同版本号、共用一套代码。
+
+**What 新增了什么**
+- 可双击运行的 macOS `.app`（PyInstaller `--windowed`）；发行 zip 内含外置 `config.py` + `首次运行请先双击我.command`（一键解除未签名限制）+ 使用说明。
+- **浏览器**：新增 **Safari** 分支（`core/driver.py`），GUI 浏览器下拉变为 Chrome / Edge / Safari；平台默认 = Windows→Edge、macOS/Linux→Chrome。
+- **防休眠**：macOS 走系统 `caffeinate -dimsu`（`ui_qt/services/prevent_sleep.py`）。
+- 新增 `core/paths.py`：跨平台资源 / 数据目录解析（冻结态 `_MEIPASS` 资源 vs `.app` 同级可写数据）。
+- 新增 `build_mac.py` + `.github/workflows/build-macos.yml`：`macos-14` 云端构建并自动挂 Release。
+
+**兼容性**
+- 当前发布的 `LNU-LibSeat-v5.0.0-macOS-x86_64.zip` 为 Intel 构建：**Intel Mac 原生**运行，**Apple 芯片（M1–M4）经 Rosetta 2 自动**运行（首次启动系统弹窗一键装 Rosetta）——覆盖所有 Mac。
+
+**限制**
+- Safari 仅支持单账号（不支持 `--user-data-dir`，无法双账号并行），且需手动开启「允许远程自动化」。
+- 屏幕录制在 macOS 上可能不可用（不影响抢座）。
+
+---
+
 ## ⚠️ 破坏性变更
 
 | 变更 | 影响 | 迁移动作 |
@@ -201,6 +221,8 @@ def _start_captcha_model_preload(reason: str = "scheduled"):
 - **本地识别仅 06:30:00–06:35:00**：其他时段不解析验证码（设计如此，详见 [CAPTCHA_YOLO4_SIAMESE.md §时间窗口](CAPTCHA_YOLO4_SIAMESE.md)）
 - **首次启动需 3–5s 预加载**：后台线程进行，不阻塞 GUI
 - **Click3 准确率待回测**：当前仅有 Click1 的端到端 83.48% 数据
+- **macOS Safari 仅单账号**：双账号并行请用 Chrome
+- **macOS 屏幕录制可能不可用**：不影响抢座，仅缺录屏回溯
 
 ---
 
