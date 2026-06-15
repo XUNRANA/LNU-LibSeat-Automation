@@ -243,7 +243,6 @@ Copy-Item runs/click1/plan_bg_char40_yolov8n_900_100/weights/best.onnx `
 | `crawl_click3_dataset.py` | Selenium 自动采集验证码原图（target+bg+modal） |
 | `annotate_click3_dataset.py` / `annotate_click1_dataset.py` | Tkinter GUI 手动点标 |
 | `auto_label_unlabeled_click3.py` / `auto_label_unlabeled_click1.py` | 用已有模型对未标样本生成伪标签 |
-| `gpu_infer_click3_unlabeled_from_1001.py` | GPU 批量推理未标数据 |
 | `apply_click3_auto_labels.py` | 把审过的伪标签提交为正式 label.json |
 | `review_click3_auto_labels_gui.py` / `infer_click3_review_gui.py` | 人工 review 自动标注 |
 | `manual_plan_split.py` / `manual_plan_split_click1.py` | 手动微调 plan 切分坐标 |
@@ -261,7 +260,6 @@ Copy-Item runs/click1/plan_bg_char40_yolov8n_900_100/weights/best.onnx `
 | --- | --- |
 | `prepare_click3_siamese_yolo4.py` | 用 YOLO 输出构造 (plan, char) 配对数据 |
 | `train_click3_siamese_v10.py` | **当前生产** Siamese 训练（CE+Triplet） |
-| `train_click3_siamese_author.py` | 原作者方案（仅 BCE+focal），保留对照 |
 | `siamese_model_v8.py` | MobileNetV4 + projection head 模型定义 |
 | `siamese_dataloader_v8.py` | Triplet 数据加载器（in-sample + cross-sample neg） |
 | `prepare_click1_siamese_yolo4.py` / `train_click1_siamese.py` | click1 同上 |
@@ -277,18 +275,19 @@ Copy-Item runs/click1/plan_bg_char40_yolov8n_900_100/weights/best.onnx `
 
 ---
 
-## 5. 已知问题
+## 5. 模块依赖说明
 
-下列脚本引用了**已在历史清理中被删除**的基础模块 `siamese_dataloader.py` / `siamese_model.py`，目前**无法直接运行**：
+`train_click1_siamese.py` / `eval_click1_e2e.py` / `hard_negative_mine.py` 依赖仓库根的
+[`model/`](../model/) 包（`from model.siamese_model import SiameseMobileNetV4`、
+`from model.siamese_dataloader import load_dataset, SiameseDataset, dataset_collate`）。
+该包已纳入版本控制、导出名齐全，这些脚本的 import 可正常解析。
 
-- `train_click3_siamese_author.py`
-- `train_click1_siamese.py`
-- `eval_click1_e2e.py`
-- `hard_negative_mine.py`
+当前生产 click3 Siamese 走 `train_click3_siamese_v10.py`（CE+Triplet），其数据加载/模型定义
+用带 `_v8` 后缀的 `siamese_dataloader_v8.py` / `siamese_model_v8.py`（后者内部仍复用
+`model.siamese_dataloader` 的 `cvtColor/letterbox_image/preprocess_input/rand`）。
 
-若要复现生产 click1 Siamese 训练，需要从 git 历史里 `git show <commit>:siamese_dataloader.py > train/siamese_dataloader.py` 恢复，或参考 `siamese_dataloader_v8.py` 改造（`v8` 是带后缀的版本，没有依赖问题）。
-
-**推荐路径**：直接基于 `train_click3_siamese_v10.py` 改 1-plan × 4-char 的 click1 训练，避免恢复旧模块。
+**推荐路径**：复现 click1 Siamese 训练时，优先基于 `train_click3_siamese_v10.py` 改
+1-plan × 4-char，与生产管线保持一致。
 
 ---
 
