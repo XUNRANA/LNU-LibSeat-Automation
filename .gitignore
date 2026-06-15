@@ -58,7 +58,8 @@ dataset/
 真实效果/
 runs/
 scratch/
-train/
+# train/ 训练代码已公开纳入版本控制；其下的重型产物（dataset/ runs/ *.pt *.pth
+# __pycache__/ .omc/）仍由上面的全局规则忽略，只跟踪脚本、README 与 requirements。
 
 # Browser profiles (Selenium user data)
 profiles/
