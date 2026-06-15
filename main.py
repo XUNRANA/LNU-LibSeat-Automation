@@ -206,6 +206,27 @@ def _notify_success(account, room, seat, start_time, end_time):
         logger.warning("📧 [%s] 邮件发送失败！", account)
 
 
+def _terminal_outcome_from_result(account, seat, result):
+    """把 check_result 的 dict 映射为 run_timed_priority_attack 的终态返回值。
+
+    终态:
+      - stop / blacklist -> ("stopped", None)
+      - success          -> ("success", seat)
+    非终态（failed / retry_captcha 等）返回 None，交由调用方继续处理。
+    """
+    status = result.get("status")
+    if status == "stop":
+        logger.error("🛑 [%s] 收到系统可预约时间限制提示，立即停止抢座: %s", account, result.get("text", ""))
+        return ("stopped", None)
+    if status == "blacklist":
+        logger.error("🛑 [%s] 账号已被加入黑名单！立刻停止抢座: %s", account, result.get("text", ""))
+        return ("stopped", None)
+    if status == "success":
+        logger.info("🎉🎉🎉 [%s] 座位 %s 抢座成功！", account, seat)
+        return ("success", seat)
+    return None
+
+
 def run_timed_priority_attack(
     booker,
     account,
@@ -391,18 +412,10 @@ def run_timed_priority_attack(
                 result = booker.check_result()
                 status = result.get("status")
                 booker._save_screenshot(f"4_result_{status}")
-                
-                if status == "stop":
-                    logger.error("🛑 [%s] 收到系统可预约时间限制提示，立即停止抢座: %s", account, result.get("text", ""))
-                    return ("stopped", None)
 
-                if status == "blacklist":
-                    logger.error("🛑 [%s] 账号已被加入黑名单！立刻停止抢座: %s", account, result.get("text", ""))
-                    return ("stopped", None)
-
-                if status == "success":
-                    logger.info("🎉🎉🎉 [%s] 座位 %s 抢座成功！", account, seat)
-                    return ("success", seat)
+                outcome = _terminal_outcome_from_result(account, seat, result)
+                if outcome is not None:
+                    return outcome
 
                 if status == "retry_captcha":
                     logger.warning(
@@ -461,18 +474,11 @@ def run_timed_priority_attack(
         if captcha_passed:
             result = booker.check_result()
             booker._save_screenshot(f"4_result_{result.get('status', 'unknown')}")
-            
-            if result.get("status") == "stop":
-                logger.error("🛑 [%s] 收到系统可预约时间限制提示，立即停止抢座: %s", account, result.get("text", ""))
-                return ("stopped", None)
 
-            if result.get("status") == "blacklist":
-                logger.error("🛑 [%s] 账号已被加入黑名单！立刻停止抢座: %s", account, result.get("text", ""))
-                return ("stopped", None)
+            outcome = _terminal_outcome_from_result(account, seat, result)
+            if outcome is not None:
+                return outcome
 
-            if result.get("status") == "success":
-                logger.info("🎉🎉🎉 [%s] 座位 %s 抢座成功！", account, seat)
-                return ("success", seat)
             logger.warning("💔 [%s] 座位 %s 提交后被拒绝，换下一个座位。", account, seat)
             booker._close_captcha_modal()
             booker.close_popup()
