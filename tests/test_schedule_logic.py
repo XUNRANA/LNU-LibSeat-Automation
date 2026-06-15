@@ -47,3 +47,43 @@ def test_wait_until_returns_immediately_when_target_has_passed(monkeypatch):
     monkeypatch.setattr(main.utils, "get_beijing_time", lambda: now)
 
     assert main.wait_until(target, "test_account", threading.Event(), "确认提交") is True
+
+
+def test_wait_until_returns_false_when_stop_event_already_set(monkeypatch):
+    # 目标在未来，但 stop_event 进入时已置位 → 两个等待循环都跳过，
+    # 末尾 stop_event.is_set() 命中 → 返回 False（不发生真实 sleep）。
+    now = bj_time(2026, 3, 26, 5, 0, 0)
+    target = bj_time(2026, 3, 26, 6, 30, 0)  # 1.5h 后
+    monkeypatch.setattr(main.utils, "get_beijing_time", lambda: now)
+
+    ev = threading.Event()
+    ev.set()
+    assert main.wait_until(target, "test_account", ev, "确认提交") is False
+
+
+class _SignalDuringWait:
+    """模拟等待期间才收到停止信号：进入循环时未置位，wait() 立即返回 True。"""
+
+    def is_set(self):
+        return False
+
+    def wait(self, timeout=None):
+        return True
+
+
+def test_wait_until_aborts_when_signal_arrives_during_long_sleep(monkeypatch):
+    # 目标远在未来(>5s)→ 进入长睡分块循环，wait() 期间收到信号 → 返回 False。
+    now = bj_time(2026, 3, 26, 5, 0, 0)
+    target = bj_time(2026, 3, 26, 6, 30, 0)
+    monkeypatch.setattr(main.utils, "get_beijing_time", lambda: now)
+
+    assert main.wait_until(target, "test_account", _SignalDuringWait(), "确认提交") is False
+
+
+def test_build_custom_schedule_rolls_across_year_boundary():
+    # 当前已过当天目标且处于年末 → fire_at 顺延到次年
+    schedule = main.build_custom_schedule(6, 30, bj_time(2026, 12, 31, 23, 0, 0))
+
+    assert schedule["run_date"].isoformat() == "2027-01-01"
+    assert schedule["fire_at"] == bj_time(2027, 1, 1, 6, 30, 0)
+    assert schedule["seat_lock_at"] == bj_time(2027, 1, 1, 6, 29, 54)
