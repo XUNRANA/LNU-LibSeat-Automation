@@ -8,7 +8,7 @@ import threading
 from datetime import datetime, timezone, timedelta, time as dt_time
 from io import BytesIO
 
-from selenium.common import NoSuchElementException, TimeoutException
+from selenium.common import NoSuchElementException, TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
@@ -151,8 +151,9 @@ class SeatBooker:
             self.driver.save_screenshot(filepath)
             self.log.info("📸 [%s] 截图: %s", self.account, os.path.relpath(filepath))
             return filepath
-        except Exception:
-            self.log.warning("⚠️ [%s] 截图保存失败", self.account)
+        except Exception as exc:
+            # 截图纯属诊断用途，失败绝不能影响抢座主流程 → 吞掉所有异常，仅 debug 记录
+            self.log.debug("⚠️ [%s] 截图保存失败: %s", self.account, exc)
             return None
 
     def click_time_label(self, column_index, time_str, timeout=5):
@@ -574,6 +575,8 @@ class SeatBooker:
             self.log.info("✅ 本地模型返回 %d 个点击点，立即点击", len(solve_data.get("click_points_in_bg", [])))
             return solve_data
         except Exception as e:
+            # 包住本地模型(onnxruntime/cv2/numpy)与 DOM 读取：任何异常都降级为
+            # “刷新验证码重试”，绝不向上传播打断本次抢座尝试 → 此处宽 catch 系有意为之
             self.log.warning("⚠️ 验证码识别异常: %s", e)
         return {"solved": False, "no_captcha": False}
 
@@ -931,7 +934,7 @@ class SeatBooker:
                         continue
                     try:
                         el.click()
-                    except Exception:
+                    except WebDriverException:
                         self.driver.execute_script("arguments[0].click();", el)
                     try:
                         WebDriverWait(self.driver, 1).until(
@@ -941,7 +944,7 @@ class SeatBooker:
                         pass
                     if not self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
                         return True
-            except Exception:
+            except WebDriverException:
                 continue
 
         # 兜底: ESC 键
@@ -951,7 +954,7 @@ class SeatBooker:
             time.sleep(0.3)
             if not self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
                 return True
-        except Exception:
+        except WebDriverException:
             pass
 
         if not self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
