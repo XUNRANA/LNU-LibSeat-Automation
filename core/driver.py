@@ -134,7 +134,7 @@ def _cleanup_edge_lock_files():
                 pass  # file is locked by a real Edge process, skip
 
 
-def get_driver(user_data_dir: str = None):
+def get_driver(user_data_dir: str | None = None):
     """Create a configured webdriver instance for the configured browser.
 
     Resolution order for driver executable:

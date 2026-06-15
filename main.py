@@ -747,7 +747,7 @@ def thread_task(account, password, time_config, stop_event: threading.Event, sta
     except Exception as e:
         logger.exception("❌ [%s] 线程崩溃: %s", account, e)
 
-def main(stop_event: threading.Event = None):
+def main(stop_event: threading.Event | None = None):
     """
     主入口。支持从外部传入 stop_event 以实现优雅停止。
     """

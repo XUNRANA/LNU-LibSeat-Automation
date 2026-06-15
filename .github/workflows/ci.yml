@@ -74,8 +74,8 @@ jobs:
       - name: Install mypy
         run: pip install mypy
 
-      # --ignore-missing-imports：第三方包(PySide6/selenium/cv2 等)多无类型存根，
-      # 不为缺存根报错。仅检查本仓库自身代码的类型一致性。
+      # 配置(忽略缺失存根、排除构建产物/训练代码/config 数据文件)集中在 mypy.ini，
+      # 本地与 CI 一致。仅检查本仓库自身代码的类型一致性。
       - name: Mypy (non-blocking)
-        run: mypy --ignore-missing-imports --exclude '(\.build_venv|dist|build|train)' .
+        run: mypy .
         continue-on-error: true
