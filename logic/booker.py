@@ -231,6 +231,23 @@ class SeatBooker:
                     return msg
         return ""
 
+    def _detect_result_in_page_source(self, ps=None):
+        """扫 page_source 检测预约结果（toast 已消失时的兜底）。
+
+        返回 (status, text)：
+          - 黑名单（正则全文匹配，优先）-> ("blacklist", "")
+          - 命中结果关键词 -> (classify(kw), kw)
+          - 无命中 -> (None, "")
+        """
+        if ps is None:
+            ps = self.driver.page_source or ""
+        if _is_blacklist_feedback(ps):
+            return "blacklist", ""
+        for kw in BOOKING_RESULT_KEYWORDS:
+            if kw in ps:
+                return _classify_booking_result(kw), kw
+        return None, ""
+
     def _wait_captcha_result(self, timeout=3.2, poll_interval=0.06):
         """
         等待验证码提交反馈：
@@ -792,6 +809,31 @@ class SeatBooker:
         self.log.warning("⚠️ 刷新验证码按钮点击失败")
         return ""
 
+    def _dispatch_check_result(self, status, text):
+        """把分类结果映射为 check_result 的返回 dict，并执行对应副作用（截图/关弹窗）。
+
+        覆盖 _classify_booking_result 的全部返回值（success/stop/blacklist/retry_captcha/failed），
+        供 check_result 的正常路径与 page_source 兜底路径复用，避免两处分发逻辑重复。
+        """
+        if status == "success":
+            self.close_popup()
+            return {"status": "success", "text": text}
+        if status == "stop":
+            self._save_screenshot("booking_stop")
+            self._close_captcha_modal()
+            self.close_popup()
+            return {"status": "stop", "text": text}
+        if status == "blacklist":
+            self._save_screenshot("blacklist")
+            self.close_popup()
+            return {"status": "blacklist", "text": text}
+        if status == "retry_captcha":
+            return {"status": "retry_captcha", "text": text}
+        # failed（及任何未预期状态）：换下一个座位
+        self._save_screenshot("booking_failed")
+        self.close_popup()
+        return {"status": "failed", "text": text}
+
     def check_result(self):
         """
         检查提交结果。
@@ -824,71 +866,20 @@ class SeatBooker:
             )
             self.log.info("📝 结果反馈: %s", result_text)
             status = _classify_booking_result(result_text)
-
-            if status == "stop":
-                self._save_screenshot("booking_stop")
-                self._close_captcha_modal()
-                self.close_popup()
-                return {"status": "stop", "text": result_text}
-
-            # 如果是成功提示，关闭弹窗
-            if status == "success":
-                self.close_popup()
-                return {"status": "success", "text": result_text}
-
-            # 如果检测到黑名单，直接返回特殊状态，外层停止会话
-            if status == "blacklist":
-                self._save_screenshot("blacklist")
-                self.close_popup()
-                return {"status": "blacklist", "text": result_text}
-
-            # 这类失败通常可刷新验证码后继续当前座位尝试
-            if status == "retry_captcha":
-                return {
-                    "status": "retry_captcha",
-                    "text": result_text,
-                }
-
-            # 其它失败提示：关闭弹窗并换下一个座位
-            if status == "failed":
-                self._save_screenshot("booking_failed")
-                self.close_popup()
-                return {"status": "failed", "text": result_text}
-
-            self._save_screenshot("unknown_result")
-            return {"status": "failed", "text": result_text}
+            return self._dispatch_check_result(status, result_text)
         except Exception:
             # WebDriverWait 超时：toast 可能已消失，用 page_source 兜底
             self._dismiss_stale_messages()
             ps = self.driver.page_source or ""
-            # 先检查黑名单（正则需要长文本匹配，必须在关键词循环前）
-            if _is_blacklist_feedback(ps):
+            status, matched_kw = self._detect_result_in_page_source(ps)
+            # 黑名单全文匹配（matched_kw 为空）保留专属兜底文案
+            if status == "blacklist" and not matched_kw:
                 self._save_screenshot("blacklist")
                 self.close_popup()
                 return {"status": "blacklist", "text": "黑名单（page_source 兜底）"}
-            for kw in BOOKING_RESULT_KEYWORDS:
-                if kw in ps:
-                    result_text = kw
-                    status = _classify_booking_result(result_text)
-                    self.log.info("📝 page_source 兜底检测到: %s", result_text)
-                    if status == "success":
-                        self.close_popup()
-                        return {"status": "success", "text": result_text}
-                    if status == "stop":
-                        self._save_screenshot("booking_stop")
-                        self._close_captcha_modal()
-                        self.close_popup()
-                        return {"status": "stop", "text": result_text}
-                    if status == "blacklist":
-                        self._save_screenshot("blacklist")
-                        self.close_popup()
-                        return {"status": "blacklist", "text": result_text}
-                    if status == "retry_captcha":
-                        return {"status": "retry_captcha", "text": result_text}
-                    if status == "failed":
-                        self._save_screenshot("booking_failed")
-                        self.close_popup()
-                        return {"status": "failed", "text": result_text}
+            if status is not None:
+                self.log.info("📝 page_source 兜底检测到: %s", matched_kw)
+                return self._dispatch_check_result(status, matched_kw)
             self._save_screenshot("check_timeout")
             return {"status": "failed", "text": "check_timeout"}
 
