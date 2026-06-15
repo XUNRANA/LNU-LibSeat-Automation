@@ -35,8 +35,9 @@ jobs:
       - name: Prepare config from template
         run: cp config.example.py config.py
 
+      # 排除 smoke 标记：那些用例会启动真实浏览器，headless runner 无显示环境跑不了。
       - name: Run tests
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests/ -q -m "not smoke"
 
   lint:
     runs-on: ubuntu-latest
