@@ -198,12 +198,12 @@ class SeatBooker:
         for by, selector in selectors:
             try:
                 elements = self.driver.find_elements(by, selector)
-            except Exception:
+            except WebDriverException:
                 continue
             for el in reversed(elements):
                 try:
                     msg = (el.text or "").strip()
-                except Exception:
+                except WebDriverException:
                     continue
                 if msg:
                     return msg
@@ -219,14 +219,14 @@ class SeatBooker:
         for by, selector in BOOKING_RESULT_FEEDBACK_SELECTORS:
             try:
                 elements = self.driver.find_elements(by, selector)
-            except Exception:
+            except WebDriverException:
                 continue
             for el in reversed(elements):
                 try:
                     if not el.is_displayed():
                         continue
                     msg = (el.text or "").strip()
-                except Exception:
+                except WebDriverException:
                     continue
                 if msg and any(keyword in msg for keyword in BOOKING_RESULT_KEYWORDS):
                     return msg
@@ -311,7 +311,7 @@ class SeatBooker:
                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", seat_elem)
                 try:
                     seat_elem.click()
-                except Exception as click_err:
+                except WebDriverException as click_err:
                     # 区分两种情况：被弹窗/遮罩拦截 vs 元素消失。前者用 JS 强点重试一次。
                     err_name = type(click_err).__name__
                     if "Intercept" in err_name:
@@ -323,7 +323,7 @@ class SeatBooker:
                         self.driver.execute_script("arguments[0].click();", seat_elem)
                     else:
                         raise
-            except Exception:
+            except WebDriverException:
                 self.last_lock_failure_reason = f"座位 {seat_num} 在当前自习室找不到或不可点击"
                 self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
                 return False
@@ -430,7 +430,7 @@ class SeatBooker:
             submit_btn.click()
             self.log.info("🔥 已点击「立即预约」，等待验证码弹窗...")
             return True
-        except Exception as e:
+        except WebDriverException as e:
             self.log.error("❌ 提交按钮点击失败: %s", e)
             return False
 
@@ -440,7 +440,7 @@ class SeatBooker:
             return None
         try:
             return base64.b64decode(src.split(",", 1)[1])
-        except Exception:
+        except (ValueError, IndexError):
             return None
 
     @staticmethod
@@ -465,7 +465,7 @@ class SeatBooker:
                 key = self._captcha_image_key(target_src, bg_src)
                 if target_bytes and bg_bytes and key != previous_key:
                     return target_bytes, bg_bytes, bg_el, key
-            except Exception:
+            except WebDriverException:
                 pass
             time.sleep(0.05)
         return None, None, None, ""
@@ -647,7 +647,7 @@ class SeatBooker:
                 import json as _json
                 try:
                     d = _json.loads(info)
-                except Exception:
+                except (ValueError, TypeError):
                     d = {"raw": info}
                 self.log.info("⚡ [%s] 确认按钮状态: disabled=%s, ptrEvt=%s, cursor=%s, class=%s",
                     self.account, d.get("disabled"), d.get("pointerEvents"), d.get("cursor"), d.get("className"))
@@ -665,7 +665,7 @@ class SeatBooker:
                     confirm_btn = self.driver.find_element(By.CSS_SELECTOR, ".captcha-modal-footer .el-button.confirm-btn")
                     confirm_btn.click()
                     btn_clicked = True
-                except Exception:
+                except WebDriverException:
                     self.log.warning("⚡ [%s] Selenium 点确认失败", self.account)
             else:
                 self.log.warning("⚡ [%s] 确认按钮未就绪: %s", self.account, btn_diag)
@@ -752,9 +752,9 @@ class SeatBooker:
                 try:
                     cancel_btn = self.driver.find_element(By.XPATH, "//*[contains(text(), '取消')]")
                     cancel_btn.click()
-                except Exception:
+                except WebDriverException:
                     pass
-        except Exception:
+        except WebDriverException:
             pass
 
     def _cleanup_all_popups(self):
@@ -767,7 +767,7 @@ class SeatBooker:
                 "document.querySelectorAll('.v-modal, .el-dialog__wrapper')"
                 ".forEach(function(el) { el.style.display = 'none'; });"
             )
-        except Exception:
+        except WebDriverException:
             pass
 
     def is_captcha_popup_present(self):
@@ -778,7 +778,7 @@ class SeatBooker:
                 if btn.is_displayed():
                     btn.click()
                     time.sleep(0.1)
-        except Exception:
+        except WebDriverException:
             pass
         return len(self.driver.find_elements(By.CSS_SELECTOR, ".captcha-modal-container")) > 0
 
@@ -807,7 +807,7 @@ class SeatBooker:
                     timeout=wait_timeout,
                 )
                 return key
-            except Exception:
+            except WebDriverException:
                 continue
         self.log.warning("⚠️ 刷新验证码按钮点击失败")
         return ""
@@ -896,13 +896,13 @@ class SeatBooker:
                 EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), '自选座位')]")))
             self.driver.execute_script("arguments[0].click();", btn)
             time.sleep(0.3)
-        except Exception:
+        except WebDriverException:
             pass
         try:
             WebDriverWait(self.driver, timeout).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "seat-name")))
             return True
-        except Exception:
+        except WebDriverException:
             self.log.warning("⚠️ [%s] 无法返回座位图！", self.account)
             return False
 
