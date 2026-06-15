@@ -65,7 +65,7 @@ def _enable_macos() -> bool:
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         return True
-    except Exception:
+    except OSError:
         _caffeinate_proc = None
         return False
 
@@ -76,7 +76,7 @@ def _disable_macos() -> bool:
     if _caffeinate_proc is not None:
         try:
             _caffeinate_proc.terminate()
-        except Exception:
+        except OSError:
             pass
         _caffeinate_proc = None
     return True
@@ -88,7 +88,7 @@ def _set_state(flags: int) -> bool:
     try:
         ctypes.windll.kernel32.SetThreadExecutionState(flags)
         return True
-    except Exception:
+    except (AttributeError, OSError):
         return False
 
 
@@ -99,7 +99,7 @@ def _idle_seconds() -> float:
         if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
             tick = ctypes.windll.kernel32.GetTickCount()
             return max(0.0, (tick - info.dwTime) / 1000.0)
-    except Exception:
+    except (AttributeError, OSError):
         pass
     return 0.0
 
@@ -116,7 +116,7 @@ def _send_mouse_jiggle() -> None:
         ctypes.windll.user32.SendInput(1, ctypes.byref(inp), size)
         inp.u.mi.dx = -1
         ctypes.windll.user32.SendInput(1, ctypes.byref(inp), size)
-    except Exception:
+    except (AttributeError, OSError):
         pass
 
 
