@@ -20,6 +20,7 @@
 <a href="https://doc.qt.io/qtforpython-6/"><img src="https://img.shields.io/badge/PySide6-6.7+-41CD52?logo=qt&logoColor=white" alt="PySide6"></a>
 <a href="https://onnxruntime.ai/"><img src="https://img.shields.io/badge/ONNX-Runtime-005CED?logo=onnx&logoColor=white" alt="ONNX Runtime"></a>
 <a href="https://selenium.dev"><img src="https://img.shields.io/badge/Selenium-4.x-43B02A?logo=selenium&logoColor=white" alt="Selenium"></a>
+<a href="https://github.com/XUNRANA/LNU-LibSeat-Automation/actions/workflows/ci.yml"><img src="https://github.com/XUNRANA/LNU-LibSeat-Automation/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 <a href="https://github.com/XUNRANA/LNU-LibSeat-Automation/releases/latest"><img src="https://img.shields.io/github/v/release/XUNRANA/LNU-LibSeat-Automation?label=Release&color=indigo" alt="Release"></a>
 <a href="#-免责声明"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License"></a>
 <a href="https://github.com/XUNRANA/LNU-LibSeat-Automation"><img src="https://img.shields.io/github/stars/XUNRANA/LNU-LibSeat-Automation?style=social" alt="Stars"></a>
@@ -471,6 +472,13 @@ python -m venv .venv
 pip install -r requirements.txt
 python gui_qt.py        # v5 入口（v3 是 gui.py）
 ```
+
+跑测试（`smoke` 用例需真实浏览器，日常用 `not smoke` 跳过，与 CI 一致）：
+
+```powershell
+pip install pytest ruff
+pytest -m "not smoke"
+```
 </details>
 
 <details>
@@ -532,10 +540,14 @@ LNU-LibSeat-Automation/
 ├── logic/                      # 🧠 业务逻辑层
 │   ├── auth.py                 #   自动登录
 │   ├── navigator.py            #   校区/自习室切换
-│   └── booker.py               #   选座 + 验证码 + 提交 + 结果检测
+│   ├── booker.py               #   选座 + 验证码 + 提交 + 结果检测
+│   └── result_classifier.py    #   预约结果分类（纯函数，可单测）
 ├── model/                      # 🧪 Siamese 模型定义 + 数据加载（训练用，运行时不需要）
 │   ├── siamese_model.py
 │   └── siamese_dataloader.py
+├── tests/                      # ✅ pytest 单元测试（默认 -m "not smoke" 跳过真机用例）
+├── pytest.ini                  # pytest 配置（注册 smoke marker）
+├── .github/workflows/          # 🔄 CI：push/PR 跑 pytest + ruff；打 v* 标签构建 macOS .app
 └── docs/                       # 📖 文档
 ```
 </details>
