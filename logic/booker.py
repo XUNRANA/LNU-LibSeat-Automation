@@ -4,7 +4,6 @@ import time
 
 import base64
 import logging
-import re
 import threading
 from datetime import datetime, timezone, timedelta, time as dt_time
 from io import BytesIO
@@ -16,6 +15,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image
 from core.logger import get_logger
+from logic.result_classifier import (
+    classify_booking_result as _classify_booking_result,
+    is_blacklist_feedback as _is_blacklist_feedback,
+)
 
 _logger = get_logger(__name__)
 _CAPTCHA_SOLVER_LOCK = threading.Lock()
@@ -68,64 +71,6 @@ BOOKING_RESULT_FEEDBACK_SELECTORS = (
     (By.CSS_SELECTOR, ".el-dialog__wrapper:not([style*='display: none']) .el-message-box__message"),
     (By.CSS_SELECTOR, ".el-dialog__wrapper:not([style*='display: none']) .el-dialog__body"),
 )
-BLACKLIST_FEEDBACK_RE = re.compile(
-    r"对不起[，,]?您已被加入黑名单[，,]?"
-    r"预约权限将在\d{4}年\d{1,2}月\d{1,2}日恢复[。.!！]?"
-    r"原因[:：]7天内迟到违约[，,]超过3次[，,]加入黑名单7天"
-)
-
-
-def _is_blacklist_feedback(result_text):
-    text = re.sub(r"\s+", "", result_text or "")
-    if not text:
-        return False
-
-    return bool(BLACKLIST_FEEDBACK_RE.search(text))
-
-
-def _is_stop_booking_feedback(result_text):
-    text = re.sub(r"\s+", "", result_text or "")
-    if not text:
-        return False
-    text = text.replace("\uff5e", "~").replace("\u301c", "~").replace("-", "~")
-    return (
-        "\u7cfb\u7edf\u53ef\u9884\u7ea6\u65f6\u95f4" in text
-        and "06:30" in text
-        and "22:30" in text
-    )
-
-
-def _classify_booking_result(result_text):
-    if _is_stop_booking_feedback(result_text):
-        return "stop"
-
-    if "预约成功" in result_text:
-        return "success"
-    if "有效预约" in result_text:
-        return "stop"
-    if "每日限制" in result_text:
-        return "stop"
-    if "部分读者" in result_text:
-        return "stop"
-
-    if _is_blacklist_feedback(result_text):
-        return "blacklist"
-
-    if (
-        "验证码错误" in result_text
-        or "系统繁忙" in result_text
-        or "请稍后" in result_text
-        or "请重试" in result_text
-        or "操作过于频繁" in result_text
-    ):
-        return "retry_captcha"
-
-    if "已被他人预约" in result_text:
-        return "failed"
-    if "已有预约" in result_text or "预约失败" in result_text:
-        return "failed"
-
-    return "failed"
 
 
 def _in_local_captcha_window() -> bool:

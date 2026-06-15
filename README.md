@@ -29,7 +29,7 @@
 </tr>
 <!-- 统计数据行 -->
 <tr>
-<td align="center" width="250" height="160"><h1>🧠</h1>自研 YOLO4+Siamese<br>本地识别</td>
+<td align="center" width="250" height="160"><h1>🧠</h1>自研 YOLOv8+Siamese<br>本地识别</td>
 <td align="center" width="250" height="160"><h1>83.48%</h1>Click1 端到端准确率</td>
 <td align="center" width="250" height="160"><h1>21 间</h1>双校区自习室全覆盖</td>
 <td align="center" width="250" height="160"><h1>0 元</h1>你的使用成本</td>
@@ -154,7 +154,7 @@ Mac 双击不了 `.exe`，请下载 macOS 专版 `.app`：
 <tr>
 <td width="333" valign="top">
 <h3>🧠 自研验证码 AI</h3>
-<b>YOLO4 检测 + Siamese 相似度</b>双阶段管线，本地 ONNX 推理，告别付费 API。<br>
+<b>YOLOv8 检测 + Siamese 相似度</b>双阶段管线，本地 ONNX 推理，告别付费 API。<br>
 Click1 端到端 <b>83.48%</b> 准确率，单次 &lt; 1s。
 </td>
 <td width="333" valign="top">
@@ -225,16 +225,18 @@ Click1 端到端 <b>83.48%</b> 准确率，单次 &lt; 1s。
 
 ---
 
-## 🧠 v5 验证码引擎：YOLO4 + Siamese
+## 🧠 v5 验证码引擎：YOLOv8 + Siamese
 
 > v5.0.0 取代了 v3 的「图鉴 API + ddddocr」双引擎，全面切到自研本地模型。完整技术细节见 [CAPTCHA_YOLO4_SIAMESE.md](docs/CAPTCHA_YOLO4_SIAMESE.md)。
+>
+> 注：源码里文件名 / 标识符带的 `yolo4`（如 `core/captcha_yolo4_siamese.py`、`_YOLO4_SIAMESE_PRELOADED`）是**内部实验代号**，实际检测骨干是 **YOLOv8**（`yolov8s` / `yolov8n`，训练代码见 `train/`）。
 
 ### 工作原理
 
 ```
 DOM 抓图 → base64 解码
         ↓
-   YOLO4 检测层（core/yolo_onnx.py）
+   YOLOv8 检测层（core/yolo_onnx.py）
         ↓ 输出 4 个候选框（置信度 0.05+）
    Siamese 相似度层
         ↓ 与目标字符 crop 对比 112×112 输入
@@ -268,7 +270,7 @@ DOM 抓图 → base64 解码
 </td>
 <td width="500" valign="top">
 <h4>🧠 自训练支持</h4>
-<code>siamese_dataloader.py</code> + <code>siamese_model.py</code><br>
+<code>model/siamese_dataloader.py</code> + <code>model/siamese_model.py</code><br>
 基于 MobileNetV4-Conv-Medium + 自定义融合头<br>
 特征维度 1280，融合层 5120→512→128→1
 </td>
@@ -277,7 +279,7 @@ DOM 抓图 → base64 解码
 
 ### v3 vs v5 性能对比
 
-| 指标 | v3 图鉴 API | v3 ddddocr | **v5 YOLO4+Siamese** |
+| 指标 | v3 图鉴 API | v3 ddddocr | **v5 YOLOv8+Siamese** |
 |------|-------------|------------|----------------------|
 | 单次识别延迟 | 7.21s | 0.51s | 待回测（预计 < 1s） |
 | 单次准确率 | 100% | 61.2% | **Click1 83.48%**（端到端） |
@@ -322,7 +324,7 @@ DOM 抓图 → base64 解码
 
 ❌ **完全不需要联网，零付费**。
 
-v5 切换到自研 **YOLO4+Siamese 本地模型**，权重内置在 exe 的 `_internal/core/checkpoints/` 下（~210MB）。
+v5 切换到自研 **YOLOv8+Siamese 本地模型**，权重内置在 exe 的 `_internal/core/checkpoints/` 下（~210MB）。
 
 ⏰ 模型仅在 **06:30:00–06:35:00** 自动启用——其他时段不识别验证码（节省 CPU）。错峰抢座请见 [CAPTCHA_YOLO4_SIAMESE.md](docs/CAPTCHA_YOLO4_SIAMESE.md)。
 </details>
@@ -372,7 +374,7 @@ v5 切换到自研 **YOLO4+Siamese 本地模型**，权重内置在 exe 的 `_in
 <details>
 <summary><b>Q7: GUI 启动后日志有「模型预加载」字样是正常的吗？</b></summary>
 
-✅ 完全正常。v5 启动 GUI 后立即在后台异步预热 YOLO4+Siamese 模型（约 3-5s），避免抢座时刻冷启动延迟。不阻塞你填表 / 点开始按钮。
+✅ 完全正常。v5 启动 GUI 后立即在后台异步预热 YOLOv8+Siamese 模型（约 3-5s），避免抢座时刻冷启动延迟。不阻塞你填表 / 点开始按钮。
 </details>
 
 ---
@@ -411,7 +413,7 @@ v5 切换到自研 **YOLO4+Siamese 本地模型**，权重内置在 exe 的 `_in
 <td align="center" width="250">
 <h3>🧠</h3>
 <a href="docs/CAPTCHA_YOLO4_SIAMESE.md"><b>验证码引擎</b></a><br>
-<sub>YOLO4+Siamese 技术细节</sub>
+<sub>YOLOv8+Siamese 技术细节</sub>
 </td>
 <td align="center" width="250">
 <h3>🎨</h3>
@@ -531,8 +533,9 @@ LNU-LibSeat-Automation/
 │   ├── auth.py                 #   自动登录
 │   ├── navigator.py            #   校区/自习室切换
 │   └── booker.py               #   选座 + 验证码 + 提交 + 结果检测
-├── siamese_dataloader.py       # 🧪 训练用（运行时不需要）
-├── siamese_model.py            # 🧪 训练用（运行时不需要）
+├── model/                      # 🧪 Siamese 模型定义 + 数据加载（训练用，运行时不需要）
+│   ├── siamese_model.py
+│   └── siamese_dataloader.py
 └── docs/                       # 📖 文档
 ```
 </details>

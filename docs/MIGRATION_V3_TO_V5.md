@@ -243,7 +243,7 @@ v5 默认禁用图鉴 API，但 `core/captcha_api.py` 文件仍保留。如需�
 <details>
 <summary><b>Q7: 我自己训练新模型替换默认权重可以吗？</b></summary>
 
-可以。源码自带 `siamese_dataloader.py` 和 `siamese_model.py`（基于 MobileNetV4 + 自定义融合头）。
+可以。源码自带 `model/siamese_dataloader.py` 和 `model/siamese_model.py`（基于 MobileNetV4 + 自定义融合头）。
 训练流程见 [CAPTCHA_YOLO4_SIAMESE.md §自训练流程](CAPTCHA_YOLO4_SIAMESE.md)。
 </details>
 

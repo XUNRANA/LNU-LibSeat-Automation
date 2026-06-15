@@ -189,17 +189,7 @@
 
 ---
 
-## 十二、验证码 AI（`core/captcha_gemini.py` / `captcha_qwen.py`）
-
-| 参数 | 值 | 位置 | 说明 |
-|------|---|------|------|
-| HTTP 请求超时 | `30` 秒 | gemini.py:21, qwen.py:22 | AI API 默认超时 |
-| max_tokens / maxOutputTokens | `512` | gemini.py:89, qwen.py:84 | 最大输出 token 数 |
-| temperature | `0` | gemini.py:88, qwen.py:83 | 确定性输出（不随机） |
-
----
-
-## 十三、本地 YOLO+Siamese 验证码模型
+## 十二、本地 YOLO+Siamese 验证码模型
 
 ### 时间窗口（`logic/booker.py`）
 
@@ -240,7 +230,7 @@
 
 ---
 
-## 十四、连接池（`main.py`）
+## 十三、连接池（`main.py`）
 
 | 参数 | 值 | 位置 | 说明 |
 |------|---|------|------|
@@ -250,7 +240,7 @@
 
 ---
 
-## 十五、防休眠（`ui_qt/services/prevent_sleep.py`）
+## 十四、防休眠（`ui_qt/services/prevent_sleep.py`）
 
 | 参数 | 值 | 位置 | 说明 |
 |------|---|------|------|
@@ -260,7 +250,7 @@
 
 ---
 
-## 十六、日志轮转（`core/logger.py`）
+## 十五、日志轮转（`core/logger.py`）
 
 | 参数 | 值 | 位置 | 说明 |
 |------|---|------|------|
@@ -269,7 +259,7 @@
 
 ---
 
-## 十七、GUI 界面（`ui_qt/`）
+## 十六、GUI 界面（`ui_qt/`）
 
 ### 窗口尺寸
 
@@ -307,20 +297,20 @@
 
 ---
 
-## 十八、Siamese 训练参数（离线训练，不影响运行时）
+## 十七、Siamese 训练参数（离线训练，不影响运行时）
 
 | 参数 | 值 | 位置 | 说明 |
 |------|---|------|------|
-| 特征维度 | `1280` | siamese_model.py:27 | MobileNetV4-Conv-Medium 输出维度 |
-| Dropout | `0.2` | siamese_model.py:28 | 特征提取 dropout 率 |
-| 融合层尺寸 | `5120→512→128→1` | siamese_model.py:31-36 | 融合头网络结构 |
-| 输入尺寸 | `112×112` | siamese_dataloader.py:177 | 数据集输入分辨率 |
-| 训练/验证比 | `0.8` | siamese_dataloader.py:70 | 80% 训练，20% 验证 |
-| 随机种子 | `42` | siamese_dataloader.py:110 | 可复现的 train/val 划分 |
-| 随机旋转 | `±15°` | siamese_dataloader.py:217 | 数据增强：旋转范围 |
-| HSV 色相偏移 | `±18` | siamese_dataloader.py:225 | 数据增强：色相范围 |
-| HSV 饱和度 | `0.3~1.7` | siamese_dataloader.py:226 | 数据增强：饱和度范围 |
-| HSV 明度 | `0.7~1.3` | siamese_dataloader.py:227 | 数据增强：明度范围 |
+| 特征维度 | `1280` | model/siamese_model.py:27 | MobileNetV4-Conv-Medium 输出维度 |
+| Dropout | `0.2` | model/siamese_model.py:28 | 特征提取 dropout 率 |
+| 融合层尺寸 | `5120→512→128→1` | model/siamese_model.py:31-36 | 融合头网络结构 |
+| 输入尺寸 | `112×112` | model/siamese_dataloader.py:177 | 数据集输入分辨率 |
+| 训练/验证比 | `0.8` | model/siamese_dataloader.py:70 | 80% 训练，20% 验证 |
+| 随机种子 | `42` | model/siamese_dataloader.py:110 | 可复现的 train/val 划分 |
+| 随机旋转 | `±15°` | model/siamese_dataloader.py:217 | 数据增强：旋转范围 |
+| HSV 色相偏移 | `±18` | model/siamese_dataloader.py:225 | 数据增强：色相范围 |
+| HSV 饱和度 | `0.3~1.7` | model/siamese_dataloader.py:226 | 数据增强：饱和度范围 |
+| HSV 明度 | `0.7~1.3` | model/siamese_dataloader.py:227 | 数据增强：明度范围 |
 
 ---
 

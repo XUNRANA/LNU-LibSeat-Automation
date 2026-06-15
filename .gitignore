@@ -20,6 +20,8 @@ Thumbs.db
 # Sensitive files
 .env
 .env.*
+# Local config holds 学号/密码 in plaintext — never commit it. Use config.example.py as the template.
+config.py
 
 # Logs
 logs/
@@ -46,7 +48,11 @@ dist/
 *.swp
 mail.txt
 
-tests/
+# Model weights — only the runtime ONNX files are tracked.
+# Training weights (.pt/.pth) are kept locally / attached to Releases, not committed.
+*.pt
+*.pth
+
 示例/
 dataset/
 真实效果/

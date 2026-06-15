@@ -137,10 +137,10 @@ Siamese 网络（孪生子网共享权重）
 
 | 层 | 配置 | 位置 |
 |----|------|------|
-| Backbone | MobileNetV4-Conv-Medium | `siamese_model.py:27` |
-| 特征维度 | 1280 | `siamese_model.py:27` |
-| Dropout | 0.2 | `siamese_model.py:28` |
-| 融合头 | Linear: 5120→512→128→1 | `siamese_model.py:31-36` |
+| Backbone | MobileNetV4-Conv-Medium | `model/siamese_model.py:27` |
+| 特征维度 | 1280 | `model/siamese_model.py:27` |
+| Dropout | 0.2 | `model/siamese_model.py:28` |
+| 融合头 | Linear: 5120→512→128→1 | `model/siamese_model.py:31-36` |
 
 ### Click3 的额外约束
 
@@ -313,23 +313,23 @@ def preload_yolo4_siamese_model(reason: str = "manual"):
 
 ### 必备文件（仓库自带）
 
-- `siamese_dataloader.py` — 数据加载 + 数据增强
-- `siamese_model.py` — Siamese 网络定义
+- `model/siamese_dataloader.py` — 数据加载 + 数据增强
+- `model/siamese_model.py` — Siamese 网络定义
 
 ### 训练参数（默认）
 
 | 参数 | 值 | 位置 |
 |------|---|------|
-| 特征维度 | 1280 | `siamese_model.py:27` |
-| Dropout | 0.2 | `siamese_model.py:28` |
-| 融合层 | 5120→512→128→1 | `siamese_model.py:31-36` |
-| 输入尺寸 | 112×112 | `siamese_dataloader.py:177` |
-| 训练/验证比 | 0.8 | `siamese_dataloader.py:70` |
-| 随机种子 | 42 | `siamese_dataloader.py:110` |
-| 数据增强：旋转 | ±15° | `siamese_dataloader.py:217` |
-| 数据增强：HSV 色相 | ±18 | `siamese_dataloader.py:225` |
-| 数据增强：HSV 饱和度 | 0.3-1.7 | `siamese_dataloader.py:226` |
-| 数据增强：HSV 明度 | 0.7-1.3 | `siamese_dataloader.py:227` |
+| 特征维度 | 1280 | `model/siamese_model.py:27` |
+| Dropout | 0.2 | `model/siamese_model.py:28` |
+| 融合层 | 5120→512→128→1 | `model/siamese_model.py:31-36` |
+| 输入尺寸 | 112×112 | `model/siamese_dataloader.py:177` |
+| 训练/验证比 | 0.8 | `model/siamese_dataloader.py:70` |
+| 随机种子 | 42 | `model/siamese_dataloader.py:110` |
+| 数据增强：旋转 | ±15° | `model/siamese_dataloader.py:217` |
+| 数据增强：HSV 色相 | ±18 | `model/siamese_dataloader.py:225` |
+| 数据增强：HSV 饱和度 | 0.3-1.7 | `model/siamese_dataloader.py:226` |
+| 数据增强：HSV 明度 | 0.7-1.3 | `model/siamese_dataloader.py:227` |
 
 ### 导出 ONNX
 
