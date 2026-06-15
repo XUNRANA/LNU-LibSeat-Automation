@@ -212,7 +212,7 @@ LOG_DIR = "logs"
 
     print()
     print("=" * 55)
-    print(f"  Build complete!")
+    print("  Build complete!")
     print(f"  Output Folder: dist/{DIST_NAME}/")
     print(f"  Output Zip: dist/{DIST_NAME}.zip")
     print()

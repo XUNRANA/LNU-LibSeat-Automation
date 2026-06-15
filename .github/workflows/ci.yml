@@ -53,15 +53,10 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
-      # 阻塞门槛：只挑真 bug 类规则（语法错误、未定义名、f-string 误用等），
-      # 旧代码库尚未整体 lint，先不让风格问题卡构建。
-      - name: Ruff (blocking, real-bug rules)
-        run: ruff check --select E9,F63,F7,F82 .
-
-      # 全量风格报告：非阻塞，仅作可见性，便于后续逐步收敛。
-      - name: Ruff (full report, non-blocking)
+      # 全量 lint 作为阻塞门槛：仓库已收敛至 0 告警（含真 bug 类规则 E9/F63/F7/F82
+      # 与全部默认风格规则），此后任何新增告警都会卡构建。
+      - name: Ruff (blocking)
         run: ruff check .
-        continue-on-error: true
 
   # 类型检查：非阻塞。旧代码库缺类型标注，先用报告形式暴露问题、逐步收敛，
   # 不让类型告警卡构建（与 ruff 全量报告同一策略）。

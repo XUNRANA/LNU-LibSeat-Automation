@@ -37,18 +37,18 @@ def _logo_path() -> str:
 def _double_separator():
     box = QWidget()
     box.setFixedHeight(7)
-    l = QVBoxLayout(box)
-    l.setContentsMargins(0, 0, 0, 0)
-    l.setSpacing(0)
+    layout = QVBoxLayout(box)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
     line1 = QFrame()
     line1.setFixedHeight(1)
     line1.setStyleSheet(f"background: {C.BORDER_DARK};")
-    l.addWidget(line1)
-    l.addSpacing(3)
+    layout.addWidget(line1)
+    layout.addSpacing(3)
     line2 = QFrame()
     line2.setFixedHeight(1)
     line2.setStyleSheet(f"background: {C.BORDER};")
-    l.addWidget(line2)
+    layout.addWidget(line2)
     return box
 
 

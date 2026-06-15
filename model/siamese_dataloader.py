@@ -157,10 +157,10 @@ def load_dataset(
     train_samples = build_samples(train_folders)
     val_samples = build_samples(val_folders)
 
-    pos_train = sum(1 for _, _, l in train_samples if l == 1)
-    neg_train = sum(1 for _, _, l in train_samples if l == 0)
-    pos_val = sum(1 for _, _, l in val_samples if l == 1)
-    neg_val = sum(1 for _, _, l in val_samples if l == 0)
+    pos_train = sum(1 for _, _, label in train_samples if label == 1)
+    neg_train = sum(1 for _, _, label in train_samples if label == 0)
+    pos_val = sum(1 for _, _, label in val_samples if label == 1)
+    neg_val = sum(1 for _, _, label in val_samples if label == 0)
     print(f"训练集样本数: {len(train_samples)} (正: {pos_train}, 负: {neg_train})")
     print(f"验证集样本数: {len(val_samples)} (正: {pos_val}, 负: {neg_val})")
 

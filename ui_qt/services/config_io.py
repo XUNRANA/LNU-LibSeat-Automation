@@ -204,7 +204,9 @@ def validate(state: GuiState) -> tuple[bool, str]:
 # ── 写盘 ──
 def save_state_to_file(state: GuiState, config_path: str) -> None:
     seats_str = ", ".join(f'"{s}"' for s in state.seats)
-    esc = lambda s: (s or "").replace("\\", "\\\\").replace('"', '\\"')
+    def esc(s):
+        return (s or "").replace("\\", "\\\\").replace('"', '\\"')
+
     is_sched = state.mode == "scheduled"
 
     user_block = ""
