@@ -1,0 +1,39 @@
+name: Build Windows
+
+# 在 Windows 云端 runner 上用 PyInstaller 打包成 exe 整包 zip。
+# 与 build-macos.yml 对称：仅在打 tag(v*)或手动触发时跑——打包慢，无需每次 push。
+on:
+  push:
+    tags: ['v*']          # 推送 v* 标签时自动构建并挂到 Release
+  workflow_dispatch:       # 也可在 Actions 页手动触发（产物在 Artifacts）
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # build.py 会自建干净 venv 并装 BUILD_DEPS，这里无需预装运行依赖。
+      # core/checkpoints 下的 ONNX 权重已入库，会被 build.py 一并拷进产物。
+      - name: Build Windows app
+        run: python build.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LNU-LibSeat-windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
