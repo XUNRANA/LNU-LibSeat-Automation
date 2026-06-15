@@ -1,6 +1,7 @@
 import os
 import sys
 from selenium import webdriver
+from selenium.common import WebDriverException
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
@@ -23,7 +24,7 @@ try:
     from webdriver_manager.microsoft import EdgeChromiumDriverManager
     from webdriver_manager.chrome import ChromeDriverManager
     _HAS_WM = True
-except Exception:
+except ImportError:
     EdgeChromiumDriverManager = None
     ChromeDriverManager = None
     _HAS_WM = False
@@ -109,7 +110,7 @@ def _clear_stale_driver_cache(browser: str):
         try:
             shutil.rmtree(target)
             logger.info("Cleared stale driver cache: %s", target)
-        except Exception as exc:
+        except OSError as exc:
             logger.warning("Failed to clear cache %s: %s", target, exc)
 
 
@@ -184,7 +185,7 @@ def get_driver(user_data_dir: str = None):
             drv = webdriver.Edge(service=service, options=opts) if browser != 'chrome' else webdriver.Chrome(service=service, options=opts)
             drv.set_page_load_timeout(30)
             return drv
-        except Exception as e:
+        except WebDriverException as e:
             logger.warning("webdriver-manager driver failed (version mismatch?): %s", e)
             logger.info("Clearing stale driver caches before Selenium auto-download...")
             _clear_stale_driver_cache(browser)

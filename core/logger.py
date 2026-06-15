@@ -91,7 +91,7 @@ def register_account_log_file(account: str):
         fh.addFilter(_AccountTagFilter(account))
         logging.getLogger().addHandler(fh)
         _account_handlers[account] = fh
-    except Exception:
+    except OSError:
         pass
 
 
@@ -140,7 +140,7 @@ def get_logger(name: str = "lnu") -> logging.Logger:
         fh.setFormatter(fmt)
         fh.setLevel(level)
         logger.addHandler(fh)
-    except Exception:
+    except OSError:
         pass  # 文件写入失败不影响运行
 
     return logger

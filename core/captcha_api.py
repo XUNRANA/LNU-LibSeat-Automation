@@ -93,7 +93,7 @@ class TTShiTuClient:
                     timeout=DEFAULT_TIMEOUT,
                 )
                 result = resp.json()
-            except Exception as e:
+            except (requests.RequestException, ValueError) as e:
                 last_msg = f"network: {e}"
                 logger.warning("⚠️ TTShiTu 第 %d 次请求异常: %s", attempt, e)
                 time.sleep(0.5)
@@ -171,7 +171,7 @@ class TTShiTuClient:
                 timeout=10,
             )
             return bool(resp.json().get("success"))
-        except Exception as e:
+        except (requests.RequestException, ValueError) as e:
             logger.warning("⚠️ TTShiTu 报错接口异常: %s", e)
             return False
 
@@ -187,7 +187,7 @@ def _resolve_credentials():
         u = base64.b64decode(_C_U).decode()[::-1]
         p = base64.b64decode(_C_P).decode()[::-1]
         return u, p
-    except Exception:
+    except ValueError:
         return "", ""
 
 

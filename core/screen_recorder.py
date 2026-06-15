@@ -11,6 +11,8 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+from selenium.common import WebDriverException
+
 import cv2
 import numpy as np
 
@@ -40,13 +42,13 @@ class BrowserScreencastRecorder:
         """从浏览器拿一帧 PNG → 解码成 BGR ndarray。失败返回 None。"""
         try:
             png_bytes = self.driver.get_screenshot_as_png()
-        except Exception as e:
+        except WebDriverException as e:
             logger.debug("录屏抓帧失败: %s", e)
             return None
         try:
             arr = np.frombuffer(png_bytes, dtype=np.uint8)
             return cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        except Exception as e:
+        except (ValueError, cv2.error) as e:
             logger.debug("录屏解码失败: %s", e)
             return None
 
@@ -114,7 +116,7 @@ class BrowserScreencastRecorder:
                     if frame.shape[1] != target_w or frame.shape[0] != target_h:
                         frame = cv2.resize(frame, (target_w, target_h))
                     self._writer.write(frame)
-                except Exception as e:
+                except cv2.error as e:
                     logger.debug("录屏写帧失败: %s", e)
 
             next_tick += period
