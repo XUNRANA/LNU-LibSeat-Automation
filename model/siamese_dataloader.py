@@ -19,7 +19,6 @@ from __future__ import annotations
 import os
 import re
 import random
-from typing import Any
 
 import cv2
 import numpy as np

@@ -12,7 +12,6 @@ from logic.booker import SeatBooker
 from core.logger import get_logger, register_account_log_file
 from core.notifications import build_success_email, send_email
 
-from datetime import time as dt_time
 from datetime import timedelta
 
 

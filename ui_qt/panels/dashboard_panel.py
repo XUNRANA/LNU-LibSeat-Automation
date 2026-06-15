@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import sys
 
 from core import paths
 from PySide6.QtCore import Qt, QSize, Signal

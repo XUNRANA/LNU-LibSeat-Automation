@@ -1,7 +1,6 @@
 """主窗口：HeaderBar + 左 ConfigPanel / 右 DashboardPanel + 启停控制。"""
 from __future__ import annotations
 
-import os
 import sys
 from datetime import datetime, timedelta, timezone
 
