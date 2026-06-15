@@ -30,6 +30,11 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
+      # config.py 含敏感信息、已被 .gitignore 忽略；CI 无此文件，
+      # 从模板生成以满足 import config 的测试模块。
+      - name: Prepare config from template
+        run: cp config.example.py config.py
+
       - name: Run tests
         run: python -m pytest tests/ -q
 
