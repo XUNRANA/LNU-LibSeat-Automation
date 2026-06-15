@@ -3,6 +3,8 @@ import threading
 import time
 
 # --- 模块导入（延迟导入 config，支持 GUI 动态注入） ---
+from selenium.common import WebDriverException
+
 import core.utils as utils
 from logic.auth import Authenticator
 from logic.navigator import enter_room
@@ -180,7 +182,7 @@ def _apply_window_layout(driver, account):
         size = driver.get_window_size()
         w, h = size.get('width', 0), size.get('height', 0)
         logger.info("🪟 [%s] 窗口 %dx%d", account, w, h)
-    except Exception as e:
+    except WebDriverException as e:
         logger.warning("⚠️ [%s] 最大化失败: %s", account, e)
 
 
@@ -189,14 +191,14 @@ def _close_driver_quietly(driver):
         return
     try:
         driver.quit()
-    except Exception:
+    except WebDriverException:
         pass
     try:
         service = getattr(driver, "service", None)
         process = getattr(service, "process", None)
         if process and process.poll() is None:
             process.kill()
-    except Exception:
+    except OSError:
         pass
 
 
@@ -476,7 +478,7 @@ def run_timed_priority_attack(
                     tag = "首选" if i <= n_pref else "兜底"
                     _f.write(f"{i}. [{tag}] 座位 {s}\n")
                 _f.write(f"\n共 {len(extended_seats)} 个座位待尝试\n")
-        except Exception:
+        except OSError:
             pass  # 写文件失败不影响主流程
 
     seat_lock_at = schedule["seat_lock_at"] if schedule else None
@@ -547,7 +549,7 @@ def run_browser_session(
             _log_path = _os2.path.join(_cfg('LOG_DIR', 'logs'), f'lnu_seat_{account}.log')
             if _os2.path.exists(_log_path):
                 _session_log_start = _os2.path.getsize(_log_path)
-        except Exception:
+        except OSError:
             _session_dir = None
 
         driver = get_driver()
@@ -651,7 +653,7 @@ def run_browser_session(
                     if _new_lines:
                         with open(_os3.path.join(_session_dir, 'session.log'), 'w', encoding='utf-8') as _sf:
                             _sf.write(_new_lines)
-            except Exception:
+            except OSError:
                 pass
         _close_driver_quietly(driver)
 

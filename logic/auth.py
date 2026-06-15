@@ -1,4 +1,5 @@
 import time
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -63,7 +64,7 @@ class Authenticator:
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder="请输入账号"]'))
             )
-        except Exception as e:
+        except WebDriverException as e:
             logger.warning("⚠️ [%s] 打开网页或等待页面加载超时: %s", account, e)
 
         logger.info("📄 [%s] 页面标题: 【%s】", account, self.driver.title)
@@ -78,7 +79,7 @@ class Authenticator:
                 time.sleep(5)
                 self.driver.refresh()
                 time.sleep(3)
-        except Exception:
+        except WebDriverException:
             pass
 
         for i in range(1, 6):
@@ -93,7 +94,7 @@ class Authenticator:
                     user_input = self.wait.until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder="请输入账号"]'))
                     )
-                except Exception:
+                except WebDriverException:
                     logger.warning("❌ [%s] 找不到输入框，刷新重试...", account)
                     self.driver.refresh()
                     time.sleep(3)
@@ -125,7 +126,7 @@ class Authenticator:
                         else:
                             # 可能是空的，或者是 loading 图，等待一下
                             time.sleep(0.3)
-                    except Exception:
+                    except (WebDriverException, IndexError):
                         time.sleep(0.3)
 
                 if not captcha_base64:
@@ -164,7 +165,7 @@ class Authenticator:
                     )
                     logger.info("✅✅✅ [%s] 登录成功！！！", account)
                     return True
-                except Exception:
+                except WebDriverException:
                     pass
 
                 # 4b. 检测页面上的各种错误提示 (Element UI toast / alert)
@@ -180,7 +181,7 @@ class Authenticator:
                         if el.text.strip():
                             error_msg = el.text.strip()
                             break
-                    except Exception:
+                    except WebDriverException:
                         continue
 
                 if error_msg:
@@ -199,14 +200,14 @@ class Authenticator:
                         captcha_img = self.driver.find_element(By.CSS_SELECTOR, '.captcha-wrap img')
                         captcha_img.click()
                         time.sleep(1)
-                    except Exception:
+                    except WebDriverException:
                         pass
 
                 # 清空验证码输入框，为下次重试做准备
                 try:
                     ci = self.driver.find_element(By.CSS_SELECTOR, 'input[placeholder="请输入验证码"]')
                     ci.clear()
-                except Exception:
+                except WebDriverException:
                     pass
 
             except Exception as e:
