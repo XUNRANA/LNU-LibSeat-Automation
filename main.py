@@ -227,6 +227,173 @@ def _terminal_outcome_from_result(account, seat, result):
     return None
 
 
+def _attempt_seat(booker, account, seat, idx, start_time, end_time,
+                  fire_at, fire_at_passed, session_stop):
+    """尝试单个座位的完整流程（锁座 → 触发 → 验证码循环 → 结果检查）。
+
+    返回 (outcome, fire_at_passed)：
+      - outcome 为终态元组 ("stopped"/"success", ...) 时，调用方应直接 return 它
+      - outcome 为 None 时，表示换下一个座位（外层 continue）
+    fire_at_passed 可能在本次调用中被置 True（首个成功锁座后等过 fire_at），故回传。
+    """
+    # 0.5) 确保在座位图页面（预约失败后可能停留在错误页面）
+    booker.ensure_on_seat_grid()
+
+    # 0.6) 清除上一个座位残留的 toast，避免 page_source 误扫到旧的失败提示
+    booker._dismiss_stale_messages()
+
+    # 1) 锁定座位（弹时间选择框 + 选时间）
+    if not booker.select_time_and_wait(seat, start_time, end_time):
+        # 失败原因已由 booker 内部以 WARNING 单源记录，这里只换下一个座位
+        logger.info("🔄 [%s] 座位 %s 锁定失败，换下一个座位。", account, seat)
+        return None, fire_at_passed
+
+    # 2) 定时模式：第一次成功锁定时，等到 fire_at+1s 再触发立即预约
+    if not fire_at_passed:
+        ok = wait_until(fire_at, account, session_stop,
+                        f"等待 {fire_at.strftime('%H:%M:%S')} 准点触发预约")
+        fire_at_passed = True
+        if not ok:
+            booker.close_popup()
+            return ("stopped", None), fire_at_passed
+        time.sleep(2)  # 延迟 2s，确保服务器已切到放座状态
+
+    # 3) 触发"立即预约" → 弹出验证码弹窗
+    if not booker.fire_submit_trigger():
+        logger.warning("⚠️ [%s] 座位 %s 触发提交失败，关闭弹窗换下一个座位。", account, seat)
+        booker.close_popup()
+        return None, fire_at_passed
+
+    # 4) 验证码循环：本地 YOLO4+Siamese 每个座位最多 10 次
+    booker.current_priority = idx
+    booker.current_seat = seat
+    booker.current_retry = 0
+    max_retries = booker.get_captcha_max_retries()
+    captcha_passed = False
+    submit_rejected = False
+    booker.last_booking_result_status = ""
+    booker.last_booking_result_text = ""
+
+    for retry in range(1, max_retries + 1):
+        if session_stop.is_set():
+            return ("stopped", None), fire_at_passed
+
+        # 清除上一轮残留的 toast，避免 page_source 误扫到旧的"验证码错误"
+        if retry > 1:
+            booker._dismiss_stale_messages()
+
+        booker.current_seat = seat
+        booker.current_retry = retry
+        logger.info(
+            "🔁 [%s] 座位 %s 第 %d/%d 次验证码尝试...",
+            account, seat, retry, max_retries,
+        )
+
+        # 4a) 获取验证码并解析
+        solve_data = booker.pre_solve_captcha()
+        if solve_data.get("no_captcha"):
+            logger.info("ℹ️ [%s] 未检测到验证码弹窗，直接进入结果检查。", account)
+            captcha_passed = True
+            break
+        if solve_data.get("outside_model_window"):
+            logger.warning("⚠️ [%s] 当前不在 06:30:00-06:35:00，本地模型不接入；结束当前座位尝试。", account)
+            submit_rejected = True
+            break
+        if not solve_data.get("solved"):
+            logger.warning("⚠️ [%s] 第 %d 次模型返回 False，火速刷新验证码。", account, retry)
+            booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
+            continue
+
+        # 4b) 直接闪电提交（不再分段等待）
+        booker.last_stop_reason = ""
+        confirm_ok = booker.fire_captcha_blitz(solve_data)
+
+        # 4c) 检查结果
+        if confirm_ok:
+            result = booker.check_result()
+            status = result.get("status")
+            booker._save_screenshot(f"4_result_{status}")
+
+            outcome = _terminal_outcome_from_result(account, seat, result)
+            if outcome is not None:
+                return outcome, fire_at_passed
+
+            if status == "retry_captcha":
+                logger.warning(
+                    "⚠️ [%s] 第 %d 次收到可重试反馈【%s】，准备继续当前座位。",
+                    account, retry, result.get("text", ""),
+                )
+                if not booker.is_captcha_popup_present():
+                    logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
+                    if not booker.select_time_and_wait(seat, start_time, end_time):
+                        submit_rejected = True
+                        break
+                    if not booker.fire_submit_trigger():
+                        submit_rejected = True
+                        break
+                    continue
+
+                if booker.last_captcha_auto_refreshed:
+                    booker.last_captcha_auto_refreshed = False
+                    logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
+                else:
+                    booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
+                continue
+
+            submit_rejected = True
+            break
+
+        if getattr(booker, "last_stop_reason", ""):
+            logger.error("🛑 [%s] 收到系统可预约时间限制提示，立即停止抢座: %s", account, booker.last_stop_reason)
+            return ("stopped", None), fire_at_passed
+
+        logger.warning("⚠️ [%s] 第 %d 次确认未通过，准备重试。", account, retry)
+
+        if not booker.is_captcha_popup_present():
+            logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
+            if not booker.select_time_and_wait(seat, start_time, end_time):
+                submit_rejected = True
+                break
+            if not booker.fire_submit_trigger():
+                submit_rejected = True
+                break
+            continue
+
+        if booker.last_captcha_auto_refreshed:
+            booker.last_captcha_auto_refreshed = False
+            logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
+        else:
+            booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
+
+    if submit_rejected:
+        logger.warning("💔 [%s] 座位 %s 提交后被拒绝，换下一个座位。", account, seat)
+        booker._close_captcha_modal()
+        booker.close_popup()
+        booker.ensure_on_seat_grid()
+        return None, fire_at_passed
+
+    if captcha_passed:
+        result = booker.check_result()
+        booker._save_screenshot(f"4_result_{result.get('status', 'unknown')}")
+
+        outcome = _terminal_outcome_from_result(account, seat, result)
+        if outcome is not None:
+            return outcome, fire_at_passed
+
+        logger.warning("💔 [%s] 座位 %s 提交后被拒绝，换下一个座位。", account, seat)
+        booker._close_captcha_modal()
+        booker.close_popup()
+        return None, fire_at_passed
+
+    logger.warning(
+        "💔 [%s] 座位 %s 在 %d 次重试后仍未通过验证码，换下一个座位。",
+        account, seat, max_retries,
+    )
+    booker._close_captcha_modal()
+    booker.close_popup()
+    return None, fire_at_passed
+
+
 def run_timed_priority_attack(
     booker,
     account,
@@ -335,163 +502,12 @@ def run_timed_priority_attack(
             logger.info("🔀 [%s] === 首选耗尽，开始随机扫描 %s 剩余座位 ===", account, room_name)
         logger.info("🎯 [%s] === 抢座位 %s ===", account, seat)
 
-        # 0.5) 确保在座位图页面（预约失败后可能停留在错误页面）
-        booker.ensure_on_seat_grid()
-
-        # 0.6) 清除上一个座位残留的 toast，避免 page_source 误扫到旧的失败提示
-        booker._dismiss_stale_messages()
-
-        # 1) 锁定座位（弹时间选择框 + 选时间）
-        if not booker.select_time_and_wait(seat, start_time, end_time):
-            # 失败原因已由 booker 内部以 WARNING 单源记录，这里只换下一个座位
-            logger.info("🔄 [%s] 座位 %s 锁定失败，换下一个座位。", account, seat)
-            continue
-
-        # 2) 定时模式：第一次成功锁定时，等到 fire_at+1s 再触发立即预约
-        if not fire_at_passed:
-            ok = wait_until(fire_at, account, session_stop,
-                            f"等待 {fire_at.strftime('%H:%M:%S')} 准点触发预约")
-            fire_at_passed = True
-            if not ok:
-                booker.close_popup()
-                return ("stopped", None)
-            time.sleep(2)  # 延迟 2s，确保服务器已切到放座状态
-
-        # 3) 触发"立即预约" → 弹出验证码弹窗
-        if not booker.fire_submit_trigger():
-            logger.warning("⚠️ [%s] 座位 %s 触发提交失败，关闭弹窗换下一个座位。", account, seat)
-            booker.close_popup()
-            continue
-
-        # 4) 验证码循环：本地 YOLO4+Siamese 每个座位最多 10 次
-        booker.current_priority = idx
-        booker.current_seat = seat
-        booker.current_retry = 0
-        max_retries = booker.get_captcha_max_retries()
-        captcha_passed = False
-        submit_rejected = False
-        booker.last_booking_result_status = ""
-        booker.last_booking_result_text = ""
-
-        for retry in range(1, max_retries + 1):
-            if session_stop.is_set():
-                return ("stopped", None)
-
-            # 清除上一轮残留的 toast，避免 page_source 误扫到旧的"验证码错误"
-            if retry > 1:
-                booker._dismiss_stale_messages()
-
-            booker.current_seat = seat
-            booker.current_retry = retry
-            logger.info(
-                "🔁 [%s] 座位 %s 第 %d/%d 次验证码尝试...",
-                account, seat, retry, max_retries,
-            )
-
-            # 4a) 获取验证码并解析
-            solve_data = booker.pre_solve_captcha()
-            if solve_data.get("no_captcha"):
-                logger.info("ℹ️ [%s] 未检测到验证码弹窗，直接进入结果检查。", account)
-                captcha_passed = True
-                break
-            if solve_data.get("outside_model_window"):
-                logger.warning("⚠️ [%s] 当前不在 06:30:00-06:35:00，本地模型不接入；结束当前座位尝试。", account)
-                submit_rejected = True
-                break
-            if not solve_data.get("solved"):
-                logger.warning("⚠️ [%s] 第 %d 次模型返回 False，火速刷新验证码。", account, retry)
-                booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
-                continue
-
-            # 4b) 直接闪电提交（不再分段等待）
-            booker.last_stop_reason = ""
-            confirm_ok = booker.fire_captcha_blitz(solve_data)
-
-            # 4c) 检查结果
-            if confirm_ok:
-                result = booker.check_result()
-                status = result.get("status")
-                booker._save_screenshot(f"4_result_{status}")
-
-                outcome = _terminal_outcome_from_result(account, seat, result)
-                if outcome is not None:
-                    return outcome
-
-                if status == "retry_captcha":
-                    logger.warning(
-                        "⚠️ [%s] 第 %d 次收到可重试反馈【%s】，准备继续当前座位。",
-                        account, retry, result.get("text", ""),
-                    )
-                    if not booker.is_captcha_popup_present():
-                        logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
-                        if not booker.select_time_and_wait(seat, start_time, end_time):
-                            submit_rejected = True
-                            break
-                        if not booker.fire_submit_trigger():
-                            submit_rejected = True
-                            break
-                        continue
-
-                    if booker.last_captcha_auto_refreshed:
-                        booker.last_captcha_auto_refreshed = False
-                        logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
-                    else:
-                        booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
-                    continue
-
-                submit_rejected = True
-                break
-            
-            if getattr(booker, "last_stop_reason", ""):
-                logger.error("🛑 [%s] 收到系统可预约时间限制提示，立即停止抢座: %s", account, booker.last_stop_reason)
-                return ("stopped", None)
-
-            logger.warning("⚠️ [%s] 第 %d 次确认未通过，准备重试。", account, retry)
-            
-            if not booker.is_captcha_popup_present():
-                logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
-                if not booker.select_time_and_wait(seat, start_time, end_time):
-                    submit_rejected = True
-                    break
-                if not booker.fire_submit_trigger():
-                    submit_rejected = True
-                    break
-                continue
-            
-            if booker.last_captcha_auto_refreshed:
-                booker.last_captcha_auto_refreshed = False
-                logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
-            else:
-                booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
-
-        if submit_rejected:
-            logger.warning("💔 [%s] 座位 %s 提交后被拒绝，换下一个座位。", account, seat)
-            booker._close_captcha_modal()
-            booker.close_popup()
-            booker.ensure_on_seat_grid()
-            continue
-
-        if captcha_passed:
-            result = booker.check_result()
-            booker._save_screenshot(f"4_result_{result.get('status', 'unknown')}")
-
-            outcome = _terminal_outcome_from_result(account, seat, result)
-            if outcome is not None:
-                return outcome
-
-            logger.warning("💔 [%s] 座位 %s 提交后被拒绝，换下一个座位。", account, seat)
-            booker._close_captcha_modal()
-            booker.close_popup()
-            continue
-
-        if not captcha_passed:
-            logger.warning(
-                "💔 [%s] 座位 %s 在 %d 次重试后仍未通过验证码，换下一个座位。",
-                account, seat, max_retries,
-            )
-            booker._close_captcha_modal()
-            booker.close_popup()
-            continue
+        outcome, fire_at_passed = _attempt_seat(
+            booker, account, seat, idx, start_time, end_time,
+            fire_at, fire_at_passed, session_stop,
+        )
+        if outcome is not None:
+            return outcome
 
     logger.error(
         "❌ [%s] 全部 %d 个座位都已尝试，停止当前会话。",
