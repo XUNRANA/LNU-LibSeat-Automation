@@ -2,6 +2,8 @@ import os
 import sys
 from selenium import webdriver
 from selenium.common import WebDriverException
+from selenium.webdriver.chromium.options import ChromiumOptions
+from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
@@ -36,6 +38,7 @@ def _build_options(browser: str):
         # Safari 不支持任何 Chromium 选项（UA 伪装 / --user-data-dir / excludeSwitches 等）
         from selenium.webdriver.safari.options import Options as SafariOptions
         return SafariOptions()
+    opts: ChromiumOptions
     if browser == 'chrome':
         opts = ChromeOptions()
     else:
@@ -155,7 +158,7 @@ def get_driver(user_data_dir: str | None = None):
         if user_data_dir:
             logger.warning("Safari 不支持 --user-data-dir，已忽略；多账号将共享登录态且只能串行运行。")
         from selenium.webdriver.safari.service import Service as SafariService
-        drv = webdriver.Safari(service=SafariService(), options=opts)
+        drv: WebDriver = webdriver.Safari(service=SafariService(), options=opts)
         drv.set_page_load_timeout(30)
         return drv
 
@@ -167,9 +170,13 @@ def get_driver(user_data_dir: str | None = None):
     if DRIVER_PATH:
         if _validate_executable(DRIVER_PATH):
             logger.info("Using driver from DRIVER_PATH: %s", DRIVER_PATH)
-            # silence service logs
-            service = EdgeService(executable_path=DRIVER_PATH, log_path=os.devnull) if browser != 'chrome' else ChromeService(executable_path=DRIVER_PATH, log_path=os.devnull)
-            drv = webdriver.Edge(service=service, options=opts) if browser != 'chrome' else webdriver.Chrome(service=service, options=opts)
+            # silence service logs (concrete Service inlined so each driver gets its exact type)
+            if browser != 'chrome':
+                drv = webdriver.Edge(
+                    service=EdgeService(executable_path=DRIVER_PATH, log_path=os.devnull), options=opts)
+            else:
+                drv = webdriver.Chrome(
+                    service=ChromeService(executable_path=DRIVER_PATH, log_path=os.devnull), options=opts)
             drv.set_page_load_timeout(30)
             return drv
         else:
@@ -180,9 +187,13 @@ def get_driver(user_data_dir: str | None = None):
     if downloaded and _validate_executable(downloaded):
         logger.info("Using webdriver-manager downloaded driver: %s", downloaded)
         # silence service logs
-        service = EdgeService(executable_path=downloaded, log_path=os.devnull) if browser != 'chrome' else ChromeService(executable_path=downloaded, log_path=os.devnull)
         try:
-            drv = webdriver.Edge(service=service, options=opts) if browser != 'chrome' else webdriver.Chrome(service=service, options=opts)
+            if browser != 'chrome':
+                drv = webdriver.Edge(
+                    service=EdgeService(executable_path=downloaded, log_path=os.devnull), options=opts)
+            else:
+                drv = webdriver.Chrome(
+                    service=ChromeService(executable_path=downloaded, log_path=os.devnull), options=opts)
             drv.set_page_load_timeout(30)
             return drv
         except WebDriverException as e:
@@ -194,11 +205,9 @@ def get_driver(user_data_dir: str | None = None):
     try:
         logger.info("Attempting to start browser using Selenium built-in SeleniumManager...")
         if browser != 'chrome':
-            service = EdgeService(log_path=os.devnull)
-            drv = webdriver.Edge(service=service, options=opts)
+            drv = webdriver.Edge(service=EdgeService(log_path=os.devnull), options=opts)
         else:
-            service = ChromeService(log_path=os.devnull)
-            drv = webdriver.Chrome(service=service, options=opts)
+            drv = webdriver.Chrome(service=ChromeService(log_path=os.devnull), options=opts)
         drv.set_page_load_timeout(30)
         return drv
     except Exception as e:
