@@ -290,6 +290,94 @@ class SeatBooker:
 
         return False, last_msg
 
+    def _click_seat(self, clean_seat_num, seat_num):
+        """点击座位元素（精确匹配 + 被拦截时 JS 强点重试一次）。
+
+        失败时置 last_lock_failure_reason 并返回 False。
+        """
+        xpath = f'//div[contains(@class, "seat-name") and normalize-space(text())="{clean_seat_num}"]'
+        try:
+            seat_elem = self.wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", seat_elem)
+            try:
+                seat_elem.click()
+            except WebDriverException as click_err:
+                # 区分两种情况：被弹窗/遮罩拦截 vs 元素消失。前者用 JS 强点重试一次。
+                err_name = type(click_err).__name__
+                if "Intercept" in err_name:
+                    self.log.debug("⚠️ [%s] 座位 %s 点击被拦截（%s），自动关闭遮挡后重试。",
+                                   self.account, seat_num, err_name)
+                    self.close_popup()
+                    time.sleep(0.1)
+                    # JS 强点（绕过遮罩判断），失败再算"找不到/不可点击"
+                    self.driver.execute_script("arguments[0].click();", seat_elem)
+                else:
+                    raise
+        except WebDriverException:
+            self.last_lock_failure_reason = f"座位 {seat_num} 在当前自习室找不到或不可点击"
+            self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
+            return False
+        return True
+
+    def _scan_fast_fail_page(self, seat_num, kw_display):
+        """闪电检测 page_source 是否已有失败提示；命中则置原因/关弹窗并返回 True。"""
+        page_fail_kw = ("没有可用时间", "没有可约时间", "约满", "不可预约", "当前不可用",
+                        "无法预约", "已满", "已被", "不可用", "没有可用")
+        ps = self.driver.page_source or ""
+        fast_fail_hit = next((kw for kw in page_fail_kw if kw in ps), None)
+        if fast_fail_hit:
+            display_msg = kw_display.get(fast_fail_hit, fast_fail_hit)
+            self.last_lock_failure_reason = f"座位 {seat_num} 被系统拒绝：{display_msg}"
+            self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
+            if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
+                self.close_popup()
+            return True
+        return False
+
+    def _await_reserve_popup(self, seat_num, kw_display):
+        """轮询等待预约弹窗出现，同时监听报错 toast。返回是否成功弹出。"""
+        fail_kw_list = (
+            "没有可约时间", "没有可用时间", "约满", "不可预约", "当前不可用",
+            "无法预约", "已满", "已被", "不可用", "没有可用",
+        )
+        start_wait = time.time()
+        popup_found = False
+        last_toast_msg = ""
+        while time.time() - start_wait < 3:
+            # a) 检查是否有报错 Toast
+            msg = self._get_latest_ui_message()
+            if msg:
+                last_toast_msg = msg
+                hit_kw = next((kw for kw in fail_kw_list if kw in msg), None)
+                if hit_kw:
+                    display_msg = kw_display.get(hit_kw, hit_kw)
+                    self.last_lock_failure_reason = f"座位 {seat_num} 被系统拒绝：{display_msg}"
+                    self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
+                    # ⚠️ 关键修复：toast 与 reserve-box 可能同时出现，必须把残留弹窗关掉
+                    # 否则会拦住下一座位的点击 → 让本来存在的座位也"找不到/不可点击"
+                    if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
+                        self.close_popup()
+                    return False
+
+            # b) 检查预约弹窗是否已经成功弹出
+            if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
+                popup_found = True
+                break
+
+            time.sleep(0.1)
+
+        if not popup_found:
+            if last_toast_msg:
+                self.last_lock_failure_reason = f"座位 {seat_num} 点击后未弹出预约框，最后提示：{last_toast_msg}"
+            else:
+                self.last_lock_failure_reason = f"座位 {seat_num} 点击后未弹出预约框且无任何提示"
+            self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
+            if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
+                self.close_popup()
+            return False
+
+        return True
+
     def select_time_and_wait(self, seat_num, start_time, end_time):
         """
         选好座位和时间，等待命令
@@ -305,27 +393,7 @@ class SeatBooker:
             self._cleanup_all_popups()
 
             # 1. 点击座位 (精确匹配，杜绝 3 匹配到 138 的 Bug)
-            xpath = f'//div[contains(@class, "seat-name") and normalize-space(text())="{clean_seat_num}"]'
-            try:
-                seat_elem = self.wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", seat_elem)
-                try:
-                    seat_elem.click()
-                except WebDriverException as click_err:
-                    # 区分两种情况：被弹窗/遮罩拦截 vs 元素消失。前者用 JS 强点重试一次。
-                    err_name = type(click_err).__name__
-                    if "Intercept" in err_name:
-                        self.log.debug("⚠️ [%s] 座位 %s 点击被拦截（%s），自动关闭遮挡后重试。",
-                                       self.account, seat_num, err_name)
-                        self.close_popup()
-                        time.sleep(0.1)
-                        # JS 强点（绕过遮罩判断），失败再算"找不到/不可点击"
-                        self.driver.execute_script("arguments[0].click();", seat_elem)
-                    else:
-                        raise
-            except WebDriverException:
-                self.last_lock_failure_reason = f"座位 {seat_num} 在当前自习室找不到或不可点击"
-                self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
+            if not self._click_seat(clean_seat_num, seat_num):
                 return False
 
             # 关键词 → 用户友好的提示文案
@@ -335,57 +403,11 @@ class SeatBooker:
             }
 
             # 2. 闪电检测：先查 page_source 看有没有失败提示（比等 UI 元素快）
-            page_fail_kw = ("没有可用时间", "没有可约时间", "约满", "不可预约", "当前不可用",
-                            "无法预约", "已满", "已被", "不可用", "没有可用")
-            ps = self.driver.page_source or ""
-            fast_fail_hit = next((kw for kw in page_fail_kw if kw in ps), None)
-            if fast_fail_hit:
-                display_msg = _kw_display.get(fast_fail_hit, fast_fail_hit)
-                self.last_lock_failure_reason = f"座位 {seat_num} 被系统拒绝：{display_msg}"
-                self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
-                if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
-                    self.close_popup()
+            if self._scan_fast_fail_page(seat_num, _kw_display):
                 return False
 
-            fail_kw_list = (
-                "没有可约时间", "没有可用时间", "约满", "不可预约", "当前不可用",
-                "无法预约", "已满", "已被", "不可用", "没有可用",
-            )
             # 3. 动态轮询等待弹窗出现，同时监听可能弹出的错误提示
-            start_wait = time.time()
-            popup_found = False
-            last_toast_msg = ""
-            while time.time() - start_wait < 3:
-                # a) 检查是否有报错 Toast
-                msg = self._get_latest_ui_message()
-                if msg:
-                    last_toast_msg = msg
-                    hit_kw = next((kw for kw in fail_kw_list if kw in msg), None)
-                    if hit_kw:
-                        display_msg = _kw_display.get(hit_kw, hit_kw)
-                        self.last_lock_failure_reason = f"座位 {seat_num} 被系统拒绝：{display_msg}"
-                        self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
-                        # ⚠️ 关键修复：toast 与 reserve-box 可能同时出现，必须把残留弹窗关掉
-                        # 否则会拦住下一座位的点击 → 让本来存在的座位也"找不到/不可点击"
-                        if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
-                            self.close_popup()
-                        return False
-
-                # b) 检查预约弹窗是否已经成功弹出
-                if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
-                    popup_found = True
-                    break
-
-                time.sleep(0.1)
-
-            if not popup_found:
-                if last_toast_msg:
-                    self.last_lock_failure_reason = f"座位 {seat_num} 点击后未弹出预约框，最后提示：{last_toast_msg}"
-                else:
-                    self.last_lock_failure_reason = f"座位 {seat_num} 点击后未弹出预约框且无任何提示"
-                self.log.warning("⚠️ [%s] %s", self.account, self.last_lock_failure_reason)
-                if self.driver.find_elements(By.CLASS_NAME, "reserve-box"):
-                    self.close_popup()
+            if not self._await_reserve_popup(seat_num, _kw_display):
                 return False
 
             # 4. 选择开始时间 (Column 1)
