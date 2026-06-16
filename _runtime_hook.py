@@ -20,7 +20,8 @@ if getattr(sys, 'frozen', False):
     # Fix Chinese/emoji display in Windows console
     if sys.platform == 'win32':
         os.system('chcp 65001 >nul 2>&1')
+        # reconfigure 在运行期 TextIOWrapper 上存在，仅抽象 TextIO 类型无声明
         if sys.stdout is not None:
-            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[union-attr]
         if sys.stderr is not None:
-            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[union-attr]

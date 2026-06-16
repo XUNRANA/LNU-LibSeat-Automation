@@ -50,7 +50,8 @@ def send_email(title: str, content: str = "") -> bool:
     message = MIMEText(content, 'plain', 'utf-8')
     message['From'] = f"LNU-LibSeat-Automation <{_SMTP_USER}>"
     message['To'] = receiver
-    message['Subject'] = Header(title, 'utf-8')
+    # email API 运行期接受 Header 对象；typeshed 仅声明 str
+    message['Subject'] = Header(title, 'utf-8')  # type: ignore[assignment]
 
     try:
         smtp_obj = smtplib.SMTP_SSL(smtp_server, 465, timeout=10)
