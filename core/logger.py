@@ -3,6 +3,20 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 
+# Windows 从源码运行(python main.py)时 stdout 默认 GBK 编码，console handler 写 emoji
+# 会抛 UnicodeEncodeError 并刷屏 logging error；文件日志(utf-8)不受影响。打包 exe 由
+# _runtime_hook.py 重配，这里补齐脚本运行场景，沿用同一套 utf-8/replace 策略。
+# reconfigure 仅在运行期 TextIOWrapper 上存在；pytest/GUI 等场景的 stdout 可能不支持，
+# 故以 try/except 兜底，失败时维持原状(不致命)。
+if sys.platform == "win32" and not getattr(sys, "frozen", False):
+    for _stream in (sys.stdout, sys.stderr):
+        if _stream is None:
+            continue
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass
+
 # 延迟读取 config，避免模块不存在时崩溃
 def _get_config_attr(name: str, default: str) -> str:
     try:
