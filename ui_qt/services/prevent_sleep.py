@@ -93,6 +93,8 @@ def _set_state(flags: int) -> bool:
 
 
 def _idle_seconds() -> float:
+    if not sys.platform.startswith("win"):
+        return 0.0
     try:
         info = _LASTINPUTINFO()
         info.cbSize = ctypes.sizeof(info)
@@ -105,6 +107,8 @@ def _idle_seconds() -> float:
 
 
 def _send_mouse_jiggle() -> None:
+    if not sys.platform.startswith("win"):
+        return
     try:
         inp = _INPUT()
         inp.type = _INPUT_MOUSE

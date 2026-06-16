@@ -71,7 +71,7 @@ class _AccountTagFilter(logging.Filter):
             return False
 
 
-_account_handlers = {}  # account -> handler
+_account_handlers: dict[str, logging.Handler] = {}  # account -> handler
 
 
 def register_account_log_file(account: str):
