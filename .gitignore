@@ -27,8 +27,10 @@ config.py
 logs/
 *.log
 
-# Test cache
+# Tool caches
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Ignore coverage reports
 htmlcov/
@@ -74,3 +76,4 @@ test_rush_booking.py
 
 # Editor / AI tools
 .omc/
+.antigravitycli/
