@@ -228,6 +228,32 @@ def _terminal_outcome_from_result(account, seat, result):
     return None
 
 
+def _relock_if_popup_gone(booker, account, seat, start_time, end_time):
+    """验证码/预约界面消失时重新锁座并触发，返回循环控制信号。
+
+    - "present"  : 弹窗仍在，调用方继续走刷新逻辑
+    - "break"    : 重锁或重触发失败，调用方应 submit_rejected=True 后 break
+    - "continue" : 重锁成功，调用方应 continue（跳过刷新）
+    """
+    if booker.is_captcha_popup_present():
+        return "present"
+    logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
+    if not booker.select_time_and_wait(seat, start_time, end_time):
+        return "break"
+    if not booker.fire_submit_trigger():
+        return "break"
+    return "continue"
+
+
+def _refresh_or_note_autorefresh(booker, account, solve_data):
+    """系统已自动刷新验证码则复位标志，否则主动刷新一张新验证码。"""
+    if booker.last_captcha_auto_refreshed:
+        booker.last_captcha_auto_refreshed = False
+        logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
+    else:
+        booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
+
+
 def _attempt_seat(booker, account, seat, idx, start_time, end_time,
                   fire_at, fire_at_passed, session_stop):
     """尝试单个座位的完整流程（锁座 → 触发 → 验证码循环 → 结果检查）。
@@ -324,21 +350,13 @@ def _attempt_seat(booker, account, seat, idx, start_time, end_time,
                     "⚠️ [%s] 第 %d 次收到可重试反馈【%s】，准备继续当前座位。",
                     account, retry, result.get("text", ""),
                 )
-                if not booker.is_captcha_popup_present():
-                    logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
-                    if not booker.select_time_and_wait(seat, start_time, end_time):
-                        submit_rejected = True
-                        break
-                    if not booker.fire_submit_trigger():
-                        submit_rejected = True
-                        break
+                sig = _relock_if_popup_gone(booker, account, seat, start_time, end_time)
+                if sig == "break":
+                    submit_rejected = True
+                    break
+                if sig == "continue":
                     continue
-
-                if booker.last_captcha_auto_refreshed:
-                    booker.last_captcha_auto_refreshed = False
-                    logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
-                else:
-                    booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
+                _refresh_or_note_autorefresh(booker, account, solve_data)
                 continue
 
             submit_rejected = True
@@ -350,21 +368,13 @@ def _attempt_seat(booker, account, seat, idx, start_time, end_time,
 
         logger.warning("⚠️ [%s] 第 %d 次确认未通过，准备重试。", account, retry)
 
-        if not booker.is_captcha_popup_present():
-            logger.warning("⚠️ [%s] 验证码或预约界面已消失，尝试重新锁定座位 %s", account, seat)
-            if not booker.select_time_and_wait(seat, start_time, end_time):
-                submit_rejected = True
-                break
-            if not booker.fire_submit_trigger():
-                submit_rejected = True
-                break
+        sig = _relock_if_popup_gone(booker, account, seat, start_time, end_time)
+        if sig == "break":
+            submit_rejected = True
+            break
+        if sig == "continue":
             continue
-
-        if booker.last_captcha_auto_refreshed:
-            booker.last_captcha_auto_refreshed = False
-            logger.info("🔄 [%s] 系统已刷新验证码，直接重新求解", account)
-        else:
-            booker._refresh_click_captcha(previous_key=solve_data.get("captcha_key", ""), wait_timeout=1.0)
+        _refresh_or_note_autorefresh(booker, account, solve_data)
 
     if submit_rejected:
         logger.warning("💔 [%s] 座位 %s 提交后被拒绝，换下一个座位。", account, seat)
