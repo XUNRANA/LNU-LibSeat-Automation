@@ -315,6 +315,18 @@ retry_captcha   → 验证码错误 / 系统繁忙 / 请稍后 → 刷新验证�
 failed          → 已有预约 / 预约失败 → 关弹窗换下一座位
 ```
 
+### `logic/result_classifier.py` — 预约结果分类（纯函数）
+
+从 `booker.check_result()` 抽出的无副作用文本分类逻辑，便于单测（见 `tests/`）：
+
+| 函数 | 用途 |
+|------|------|
+| `is_blacklist_feedback(text)` | 命中黑名单提示 → 立即停止本次会话 |
+| `is_stop_booking_feedback(text)` | 命中系统限制 / 每日上限 / 部分读者开放 → 停止会话 |
+| `classify_booking_result(text)` | 综合判定 `success` / `stop` / `blacklist` / `retry_captcha` / `failed` |
+
+> 依赖规则：纯函数模块，无浏览器/网络副作用，`booker.py` 调用它做结果归类。
+
 ---
 
 ## 关键设计决策
