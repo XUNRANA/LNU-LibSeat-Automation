@@ -8,6 +8,7 @@ import os
 import sys
 import types
 from dataclasses import dataclass, field
+from typing import Any
 
 
 MAX_ACCOUNTS = 2
@@ -255,7 +256,8 @@ def inject_into_sys_modules(state: GuiState) -> None:
             "time": {"start": entry.start, "end": entry.end},
         }
 
-    cfg = types.ModuleType("config")
+    # 动态填充的运行期 config 模块；属性在此逐个注入，故标注为 Any。
+    cfg: Any = types.ModuleType("config")
     cfg.USERS = users
     cfg.TARGET_CAMPUS = state.campus
     cfg.TARGET_ROOM = state.room.strip()

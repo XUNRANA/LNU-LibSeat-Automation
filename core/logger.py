@@ -4,22 +4,24 @@ import sys
 from logging.handlers import RotatingFileHandler
 
 # 延迟读取 config，避免模块不存在时崩溃
-def _get_config_attr(name, default):
+def _get_config_attr(name: str, default: str) -> str:
     try:
         import config
-        return getattr(config, name, default)
+        return str(getattr(config, name, default))
     except Exception:
         return default
 
-_LOG_DIR = None
-_LOG_LEVEL = None
+_LOG_DIR: str | None = None
+_LOG_LEVEL: str | None = None
 
-def _ensure_defaults():
+def _ensure_defaults() -> tuple[str, str]:
+    """惰性解析日志目录与级别，返回保证非空的 (log_dir, log_level)。"""
     global _LOG_DIR, _LOG_LEVEL
     if _LOG_DIR is None:
         _LOG_DIR = _get_config_attr("LOG_DIR", "logs")
     if _LOG_LEVEL is None:
         _LOG_LEVEL = _get_config_attr("LOG_LEVEL", "INFO").upper()
+    return _LOG_DIR, _LOG_LEVEL
 
 
 # ── GUI 日志 Handler ──
@@ -78,16 +80,16 @@ def register_account_log_file(account: str):
     任何包含 [account] 标签的日志都会同时写入该文件，
     实现「主账号全部写入 / 副账号全部写入」的拆分。
     """
-    _ensure_defaults()
+    log_dir, log_level = _ensure_defaults()
     if not account or account in _account_handlers:
         return
     try:
-        if not os.path.exists(_LOG_DIR):
-            os.makedirs(_LOG_DIR, exist_ok=True)
-        log_file = os.path.join(_LOG_DIR, f"lnu_seat_{account}.log")
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f"lnu_seat_{account}.log")
         fh = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
         fh.setFormatter(PreciseFormatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
-        fh.setLevel(getattr(logging, _LOG_LEVEL, logging.INFO))
+        fh.setLevel(getattr(logging, log_level, logging.INFO))
         fh.addFilter(_AccountTagFilter(account))
         logging.getLogger().addHandler(fh)
         _account_handlers[account] = fh
@@ -112,14 +114,14 @@ class GUIPreciseFormatter(logging.Formatter):
 
 
 def get_logger(name: str = "lnu") -> logging.Logger:
-    _ensure_defaults()
+    log_dir, log_level = _ensure_defaults()
 
     logger = logging.getLogger(name)
     logger.propagate = True  # 让日志向上传播到 root logger（GUI Handler 在那里）
     if logger.handlers:
         return logger
 
-    level = getattr(logging, _LOG_LEVEL, logging.INFO)
+    level = getattr(logging, log_level, logging.INFO)
     logger.setLevel(level)
 
     fmt = PreciseFormatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
@@ -133,9 +135,9 @@ def get_logger(name: str = "lnu") -> logging.Logger:
 
     # Rotating file handler
     try:
-        if not os.path.exists(_LOG_DIR):
-            os.makedirs(_LOG_DIR, exist_ok=True)
-        log_file = os.path.join(_LOG_DIR, "lnu_seat.log")
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "lnu_seat.log")
         fh = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
         fh.setFormatter(fmt)
         fh.setLevel(level)
