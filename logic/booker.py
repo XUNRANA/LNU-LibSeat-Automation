@@ -602,6 +602,110 @@ class SeatBooker:
             self.log.warning("⚠️ 验证码识别异常: %s", e)
         return {"solved": False, "no_captcha": False}
 
+    def _perform_captcha_clicks(self, offsets, bg_el):
+        """ActionChains 点字 + JS 兜底补点 + 轮询确认按钮就绪态。
+
+        返回 (btn_ready, btn_diag)。
+        """
+        # ActionChains 用缓存的原 bg_el 点击（偏移量与之匹配）
+        chain = ActionChains(self.driver)
+        for ox, oy in offsets:
+            chain.move_to_element_with_offset(bg_el, ox, oy).click()
+        chain.perform()
+
+        self._save_screenshot("2_text_clicked")
+        # 步骤2: 等待确认按钮出现（条件渲染：点击文字后 Vue 才把按钮插入 DOM）
+        btn_exists = False
+        btn_ready = False
+        btn_diag = "missing"
+        display_w = bg_el.size["width"]
+        display_h = bg_el.size["height"]
+        for i in range(60):  # 最多等 3 秒
+            time.sleep(0.05)
+            # 0.5 秒后按钮仍不存在 → JS 兜底：用精确坐标派发 MouseEvent 到图片上
+            if i == 10 and not btn_exists:
+                self.log.info("⚡ [%s] ActionChains 未命中，JS 兜底补点...", self.account)
+                for ox, oy in offsets:
+                    px_css = ox + display_w / 2  # center-relative → top-left CSS 坐标
+                    py_css = oy + display_h / 2
+                    self.driver.execute_script(
+                        "var img = arguments[0];"
+                        "var x=arguments[1], y=arguments[2];"
+                        "var r = img.getBoundingClientRect();"
+                        "img.dispatchEvent(new MouseEvent('click',{"
+                        "  clientX:r.left+x, clientY:r.top+y,"
+                        "  bubbles:true, cancelable:true, view:window"
+                        "}));"
+                        , bg_el, px_css, py_css)
+            info = self.driver.execute_script(
+                "var footer = document.querySelector('.captcha-modal-footer');"
+                "if(!footer) return 'no_footer';"
+                "var btn = footer.querySelector('.el-button.confirm-btn');"
+                "if(!btn) return 'no_btn';"
+                "var style = window.getComputedStyle(btn);"
+                "return JSON.stringify({"
+                "  disabled: btn.disabled,"
+                "  ariaDisabled: btn.getAttribute('aria-disabled'),"
+                "  className: btn.className,"
+                "  pointerEvents: style.pointerEvents,"
+                "  cursor: style.cursor,"
+                "  opacity: style.opacity"
+                "});"
+            )
+            btn_diag = info
+            if info in ("no_footer", "no_btn"):
+                continue  # 按钮还没渲染，继续等
+            btn_exists = True
+            import json as _json
+            try:
+                d = _json.loads(info)
+            except (ValueError, TypeError):
+                d = {"raw": info}
+            self.log.info("⚡ [%s] 确认按钮状态: disabled=%s, ptrEvt=%s, cursor=%s, class=%s",
+                self.account, d.get("disabled"), d.get("pointerEvents"), d.get("cursor"), d.get("className"))
+            is_disabled = d.get("disabled") is True or "disabled" in d.get("className", "").lower()
+            if not is_disabled and d.get("pointerEvents") != "none" and d.get("cursor") != "not-allowed":
+                btn_ready = True
+                break
+        if not btn_exists:
+            self.log.warning("⚡ [%s] 确认按钮始终未出现 (diag=%s)，文字点击可能未命中", self.account, btn_diag)
+        return btn_ready, btn_diag
+
+    def _flash_detect_after_submit(self, ps):
+        """提交后扫 page_source 的闪电检测。
+
+        返回 True/False 表示已得终态(调用方直接 return)，None 表示需继续走 _wait_captcha_result。
+        """
+        captcha_wrong = any(kw in ps for kw in ("验证码错误", "请重试"))
+        if captcha_wrong:
+            self.log.warning("⚡ [%s] 闪电检测到验证码错误，本地模型本次识别失败", self.account)
+            captcha_still_there = self.is_captcha_popup_present()
+            if captcha_still_there:
+                self.log.info("🔄 [%s] 验证码已自动刷新 → 将重新求解并提交", self.account)
+                self.last_captcha_auto_refreshed = True
+            return False
+
+        # 先检查黑名单（正则需要长文本匹配，必须在关键词循环前）
+        if _is_blacklist_feedback(ps):
+            self._save_screenshot("blacklist")
+            self.last_stop_reason = "黑名单"
+            return False
+
+        # 扫预约结果关键词
+        for kw in BOOKING_RESULT_KEYWORDS:
+            if kw in ps:
+                flash_status = self._cache_terminal_booking_result(kw)
+                if flash_status == "success":
+                    return True
+                if flash_status == "stop":
+                    self.last_stop_reason = kw
+                    return False
+                if flash_status == "blacklist":
+                    return False
+                if flash_status == "failed":
+                    return True  # 交给外层 check_result 处理
+        return None
+
     def fire_captcha_blitz(self, solve_data):
         """
         ⚡ 闪电模式：ActionChains 点字（真实鼠标事件）+ Selenium 点确认。
@@ -617,68 +721,7 @@ class SeatBooker:
             return False
 
         try:
-            # ActionChains 用缓存的原 bg_el 点击（偏移量与之匹配）
-            chain = ActionChains(self.driver)
-            for ox, oy in offsets:
-                chain.move_to_element_with_offset(bg_el, ox, oy).click()
-            chain.perform()
-
-            self._save_screenshot("2_text_clicked")
-            # 步骤2: 等待确认按钮出现（条件渲染：点击文字后 Vue 才把按钮插入 DOM）
-            btn_exists = False
-            btn_ready = False
-            btn_diag = "missing"
-            display_w = bg_el.size["width"]
-            display_h = bg_el.size["height"]
-            for i in range(60):  # 最多等 3 秒
-                time.sleep(0.05)
-                # 0.5 秒后按钮仍不存在 → JS 兜底：用精确坐标派发 MouseEvent 到图片上
-                if i == 10 and not btn_exists:
-                    self.log.info("⚡ [%s] ActionChains 未命中，JS 兜底补点...", self.account)
-                    for ox, oy in offsets:
-                        px_css = ox + display_w / 2  # center-relative → top-left CSS 坐标
-                        py_css = oy + display_h / 2
-                        self.driver.execute_script(
-                            "var img = arguments[0];"
-                            "var x=arguments[1], y=arguments[2];"
-                            "var r = img.getBoundingClientRect();"
-                            "img.dispatchEvent(new MouseEvent('click',{"
-                            "  clientX:r.left+x, clientY:r.top+y,"
-                            "  bubbles:true, cancelable:true, view:window"
-                            "}));"
-                            , bg_el, px_css, py_css)
-                info = self.driver.execute_script(
-                    "var footer = document.querySelector('.captcha-modal-footer');"
-                    "if(!footer) return 'no_footer';"
-                    "var btn = footer.querySelector('.el-button.confirm-btn');"
-                    "if(!btn) return 'no_btn';"
-                    "var style = window.getComputedStyle(btn);"
-                    "return JSON.stringify({"
-                    "  disabled: btn.disabled,"
-                    "  ariaDisabled: btn.getAttribute('aria-disabled'),"
-                    "  className: btn.className,"
-                    "  pointerEvents: style.pointerEvents,"
-                    "  cursor: style.cursor,"
-                    "  opacity: style.opacity"
-                    "});"
-                )
-                btn_diag = info
-                if info in ("no_footer", "no_btn"):
-                    continue  # 按钮还没渲染，继续等
-                btn_exists = True
-                import json as _json
-                try:
-                    d = _json.loads(info)
-                except (ValueError, TypeError):
-                    d = {"raw": info}
-                self.log.info("⚡ [%s] 确认按钮状态: disabled=%s, ptrEvt=%s, cursor=%s, class=%s",
-                    self.account, d.get("disabled"), d.get("pointerEvents"), d.get("cursor"), d.get("className"))
-                is_disabled = d.get("disabled") is True or "disabled" in d.get("className", "").lower()
-                if not is_disabled and d.get("pointerEvents") != "none" and d.get("cursor") != "not-allowed":
-                    btn_ready = True
-                    break
-            if not btn_exists:
-                self.log.warning("⚡ [%s] 确认按钮始终未出现 (diag=%s)，文字点击可能未命中", self.account, btn_diag)
+            btn_ready, btn_diag = self._perform_captcha_clicks(offsets, bg_el)
 
             # 步骤3: Selenium 点击确认
             btn_clicked = False
@@ -699,34 +742,9 @@ class SeatBooker:
             # 3) 闪电检测：扫 page_source（比等 UI 元素更快更全）
             #    注意：不要在此处 _dismiss_stale_messages()，否则会清掉刚弹出的"验证码错误"
             ps = self.driver.page_source or ""
-            captcha_wrong = any(kw in ps for kw in ("验证码错误", "请重试"))
-            if captcha_wrong:
-                self.log.warning("⚡ [%s] 闪电检测到验证码错误，本地模型本次识别失败", self.account)
-                captcha_still_there = self.is_captcha_popup_present()
-                if captcha_still_there:
-                    self.log.info("🔄 [%s] 验证码已自动刷新 → 将重新求解并提交", self.account)
-                    self.last_captcha_auto_refreshed = True
-                return False
-
-            # 先检查黑名单（正则需要长文本匹配，必须在关键词循环前）
-            if _is_blacklist_feedback(ps):
-                self._save_screenshot("blacklist")
-                self.last_stop_reason = "黑名单"
-                return False
-
-            # 扫预约结果关键词
-            for kw in BOOKING_RESULT_KEYWORDS:
-                if kw in ps:
-                    flash_status = self._cache_terminal_booking_result(kw)
-                    if flash_status == "success":
-                        return True
-                    if flash_status == "stop":
-                        self.last_stop_reason = kw
-                        return False
-                    if flash_status == "blacklist":
-                        return False
-                    if flash_status == "failed":
-                        return True  # 交给外层 check_result 处理
+            flash = self._flash_detect_after_submit(ps)
+            if flash is not None:
+                return flash
 
             # 4) 检查验证码是否通过（优先监听系统提示，避免无谓等待）
             captcha_ok, fail_msg = self._wait_captcha_result(timeout=3.0)
