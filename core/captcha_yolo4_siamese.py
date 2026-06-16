@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, overload
 
 import cv2
 import numpy as np
@@ -241,6 +241,16 @@ class Yolo4SiameseSolver:
     def _image_bytes_to_bgr(image_bytes: bytes) -> np.ndarray:
         image = Image.open(BytesIO(image_bytes)).convert("RGB")
         return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+    @overload
+    def solve(
+        self, target_bytes: bytes, bg_bytes: bytes, return_details: Literal[False] = ...
+    ) -> list[tuple[int, int]] | None: ...
+
+    @overload
+    def solve(
+        self, target_bytes: bytes, bg_bytes: bytes, return_details: Literal[True]
+    ) -> Yolo4SiameseResult | None: ...
 
     def solve(
         self,

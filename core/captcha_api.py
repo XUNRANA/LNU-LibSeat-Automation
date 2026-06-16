@@ -8,7 +8,7 @@ import base64
 import time
 from io import BytesIO
 
-import requests
+import requests  # type: ignore[import-untyped]  # 运行依赖；CI 不装 types-requests
 from PIL import Image
 
 from core.logger import get_logger
