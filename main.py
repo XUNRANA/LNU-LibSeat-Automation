@@ -517,6 +517,40 @@ def run_timed_priority_attack(
     return ("all_failed", None)
 
 
+def _setup_session_dir(account):
+    """建会话专属文件夹并记录日志起始偏移；失败返回 (None, 0)。"""
+    import os
+    session_ts = utils.get_beijing_time().strftime('%Y%m%d_%H%M%S')
+    session_dir = os.path.join(_cfg('LOG_DIR', 'logs'), 'sessions', f'{session_ts}_{account}')
+    session_log_start = 0
+    try:
+        os.makedirs(session_dir, exist_ok=True)
+        log_path = os.path.join(_cfg('LOG_DIR', 'logs'), f'lnu_seat_{account}.log')
+        if os.path.exists(log_path):
+            session_log_start = os.path.getsize(log_path)
+    except OSError:
+        session_dir = None
+    return session_dir, session_log_start
+
+
+def _export_session_log(session_dir, log_start, account):
+    """把本次会话期间新增的日志切片导出到 session.log。"""
+    if not session_dir or log_start < 0:
+        return
+    try:
+        import os
+        log_src = os.path.join(_cfg('LOG_DIR', 'logs'), f'lnu_seat_{account}.log')
+        if os.path.exists(log_src):
+            with open(log_src, 'r', encoding='utf-8', errors='replace') as lf:
+                lf.seek(log_start)
+                new_lines = lf.read()
+            if new_lines:
+                with open(os.path.join(session_dir, 'session.log'), 'w', encoding='utf-8') as sf:
+                    sf.write(new_lines)
+    except OSError:
+        pass
+
+
 def run_browser_session(
     account,
     password,
@@ -539,17 +573,7 @@ def run_browser_session(
         logger.info("🌐 [%s] 浏览器会话启动。", account)
 
         # 创建本次会话专属文件夹，记录日志起始位置（只导出本次会话的日志）
-        import os as _os2
-        _session_ts = utils.get_beijing_time().strftime('%Y%m%d_%H%M%S')
-        _session_dir = _os2.path.join(_cfg('LOG_DIR', 'logs'), 'sessions', f'{_session_ts}_{account}')
-        _session_log_start = 0
-        try:
-            _os2.makedirs(_session_dir, exist_ok=True)
-            _log_path = _os2.path.join(_cfg('LOG_DIR', 'logs'), f'lnu_seat_{account}.log')
-            if _os2.path.exists(_log_path):
-                _session_log_start = _os2.path.getsize(_log_path)
-        except OSError:
-            _session_dir = None
+        _session_dir, _session_log_start = _setup_session_dir(account)
 
         driver = get_driver()
         _enlarge_driver_pool(driver, pool_size=10)
@@ -641,19 +665,7 @@ def run_browser_session(
             except Exception:
                 pass
         # 仅导出本次会话的日志到会话文件夹（从记录位置到末尾）
-        if _session_dir and _session_log_start >= 0:
-            try:
-                import os as _os3
-                log_src = _os3.path.join(_cfg('LOG_DIR', 'logs'), f'lnu_seat_{account}.log')
-                if _os3.path.exists(log_src):
-                    with open(log_src, 'r', encoding='utf-8', errors='replace') as _lf:
-                        _lf.seek(_session_log_start)
-                        _new_lines = _lf.read()
-                    if _new_lines:
-                        with open(_os3.path.join(_session_dir, 'session.log'), 'w', encoding='utf-8') as _sf:
-                            _sf.write(_new_lines)
-            except OSError:
-                pass
+        _export_session_log(_session_dir, _session_log_start, account)
         _close_driver_quietly(driver)
 
 
