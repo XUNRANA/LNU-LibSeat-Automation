@@ -306,7 +306,7 @@ DOM 抓图 → base64 解码
   <b>模型训练 · 测试</b><br>
   <sub>让免费持续 ❤️</sub>
 </td>
-<td align="center"><img src="Wechat Pay.png" width="260" alt="微信支付赞助码"><br><b>微信支付</b></td>
+<td align="center"><img src="wechat_pay.png" width="260" alt="微信支付赞助码"><br><b>微信支付</b></td>
 </tr>
 </table>
 
