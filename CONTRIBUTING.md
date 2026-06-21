@@ -28,7 +28,7 @@ CI（`.github/workflows/ci.yml`）在每次 push / PR 上跑下面两项，提�
 ```powershell
 pip install pytest ruff
 pytest -m "not smoke"      # smoke 用例会启动真实浏览器，日常跳过（与 CI 一致）
-ruff check --select E9,F63,F7,F82 .   # 阻塞门槛：真 bug 类规则
+ruff check .              # 阻塞门槛：全量默认规则集（含 E9/F63/F7/F82 等真 bug 类，与 CI 一致、须 0 告警）
 ```
 
 - `pytest -m smoke` 可单独跑需要真实浏览器的端到端冒烟用例（本地手动验证用）。
@@ -38,6 +38,8 @@ ruff check --select E9,F63,F7,F82 .   # 阻塞门槛：真 bug 类规则
 
 - 异常捕获**按域收窄**：selenium 调用用 `WebDriverException`，文件/进程用 `OSError`，解码用 `ValueError` 等；仅在包裹模型黑盒（onnxruntime/cv2）、方法级兜底边界、日志/GUI 健壮性处才保留宽 `except Exception`，并加注释说明意图。
 - 验证码模型对外是 **YOLOv8 + Siamese**；源码里的 `yolo4` 只是内部实验代号，不代表架构版本。
+- 类型检查用 `mypy`（CI 非阻塞）。本地 Windows / 旧版 mypy 可能漏报 CI（mypy 2.1.0 / Linux）的告警——改类型后请跑 `mypy --platform linux .` 对齐 CI 视角，并确认输出末行是 `Success`。
+- 把超长方法**行为等价拆分**出的 helper，保持与周围方法一致的（通常无）类型标注风格；别只给抽出的 helper 单独加注解，否则会触发额外的 mypy 函数体检查。
 - 提交信息用中文、`类型(范围): 摘要` 形式（如 `refactor(booker): ...`、`docs(readme): ...`）。
 
 ## 分支与提交

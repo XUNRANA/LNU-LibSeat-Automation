@@ -11,6 +11,11 @@
 
 </div>
 
+> [!NOTE]
+> 本文标题与文件名中的 **YOLO4** 仅为项目内部实验代号，**不代表检测器架构版本**。实际检测器是
+> [ultralytics **YOLOv8**](https://github.com/ultralytics/ultralytics)；历史命名（`yolo4` 模块名 /
+> ONNX 权重名 / 本文标题与小节锚点）沿用至今仅为兼容，不强制改名。
+
 ---
 
 ## 📑 目录
