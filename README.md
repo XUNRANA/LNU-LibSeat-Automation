@@ -547,7 +547,7 @@ LNU-LibSeat-Automation/
 │   └── siamese_dataloader.py
 ├── train/                      # 🏋️ 验证码模型训练管线（采集→标注→YOLO→Siamese→评估→导出，见 train/README.md）
 ├── tests/                      # ✅ pytest 单元测试（默认 -m "not smoke" 跳过真机用例）
-├── pytest.ini                  # pytest 配置（注册 smoke marker）
+├── pyproject.toml              # 工具配置集中（ruff / pytest / mypy）
 ├── .github/workflows/          # 🔄 CI：push/PR 跑 pytest + ruff；打 v* 标签构建 macOS .app
 └── docs/                       # 📖 文档
 ```

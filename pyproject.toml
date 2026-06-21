@@ -1,0 +1,44 @@
+# Project tooling configuration -- single source of truth.
+# Consolidates the former pytest.ini and mypy.ini, and pins the previously
+# implicit ruff defaults. This is an application (not a pip-installable
+# package), so there is intentionally no [project] / [build-system] table --
+# only [tool.*] sections.
+#
+# All three tools auto-discover this file with no --config-file flag, matching
+# the CI invocations: `ruff check .`, `pytest -m "not smoke"`, `mypy .`.
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Ruff's default rule set (E4/E7/E9 + Pyflakes), pinned explicitly so it stays
+# stable across ruff versions. This full set is the blocking lint gate in CI
+# and must stay at zero warnings.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.pytest.ini_options]
+markers = [
+    "smoke: end-to-end smoke tests that launch a real browser (CI skips via -m \"not smoke\"; run locally on demand)",
+]
+
+[tool.mypy]
+# Third-party packages (PySide6 / selenium / cv2 / ddddocr ...) ship no type
+# stubs; do not error on missing imports.
+ignore_missing_imports = true
+# Exclude build artifacts, training code, and config data files (none are
+# business logic to type-check; config.py is generated locally).
+exclude = '''(?x)(
+    ^\.build_venv/
+    | ^dist/
+    | ^build/
+    | ^train/
+    | ^config\.py$
+    | ^config\.example\.py$
+  )'''
+
+# config.py is locally generated runtime data (accounts / seat prefs), not
+# business logic. follow_imports = skip treats an imported `config` as Any, so
+# the user's local config.py is never type-checked (it does not exist in CI).
+[[tool.mypy.overrides]]
+module = "config"
+follow_imports = "skip"

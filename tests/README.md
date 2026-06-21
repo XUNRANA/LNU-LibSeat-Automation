@@ -15,5 +15,5 @@ pytest -m smoke           # 仅跑端到端冒烟（需装好浏览器，会真�
 | `test_driver_smoke.py` | **`@pytest.mark.smoke`** — 真实启动浏览器，CI 跳过 |
 | `test_email_manual.py` | 邮件构造（手动/本地） |
 
-> `smoke` marker 在仓库根 [`pytest.ini`](../pytest.ini) 注册。CI 配置见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)。
+> `smoke` marker 在仓库根 [`pyproject.toml`](../pyproject.toml) 注册。CI 配置见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)。
 > 注意：CI 在 Linux 上无 `config.py`，工作流会先 `cp config.example.py config.py` 再跑测试。
